@@ -622,7 +622,7 @@ pub async fn execute_download(
         cmd.arg("--audio-quality").arg(audio_q);
 
         if req.audio_normalize == Some(true) {
-            cmd.arg("--postprocessor-args").arg("ffmpeg:-af loudnorm=I=-14:TP=-1:LRA=11");
+            cmd.arg("--postprocessor-args").arg("ExtractAudio:-af loudnorm=I=-14:TP=-1:LRA=11");
         }
     } else {
         if let Some(ref container) = req.video_container {
