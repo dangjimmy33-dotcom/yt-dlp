@@ -33,6 +33,10 @@ import {
   Cpu,
   Sparkles,
   Zap,
+  FolderOpen,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 
 export default function App() {
@@ -91,6 +95,7 @@ export default function App() {
 
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null);
   const [isUpdatingEngine, setIsUpdatingEngine] = useState<boolean>(false);
+  const [isInstallingFfmpeg, setIsInstallingFfmpeg] = useState<boolean>(false);
 
   // Modals
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState<boolean>(false);
@@ -114,30 +119,41 @@ export default function App() {
     } catch {}
   }, [settings]);
 
-  // Initial load: Fetch Engine Status & Default Download Dir
+  // Keep startup responsive: resolve the default folder immediately, then probe
+  // engines shortly after the first paint. Rust now runs that probe off the UI thread.
   useEffect(() => {
-    const initApp = async () => {
-      try {
-        const status = await invoke<EngineStatus>("get_engine_status");
-        setEngineStatus(status);
-      } catch (e) {
-        console.error("Failed to fetch engine status:", e);
-      }
-
-      if (!settings.defaultDownloadDir) {
-        try {
-          const defaultDir = await invoke<string>("get_default_download_dir");
+    if (!settings.defaultDownloadDir) {
+      void invoke<string>("get_default_download_dir")
+        .then((defaultDir) => {
           if (defaultDir) {
             setSettings((prev) => ({ ...prev, defaultDownloadDir: defaultDir }));
           }
-        } catch (e) {
-          console.error("Failed to get default download dir:", e);
-        }
-      }
-    };
+        })
+        .catch((e) => console.error("Failed to get default download dir:", e));
+    }
 
-    initApp();
+    const timer = window.setTimeout(() => {
+      void invoke<EngineStatus>("get_engine_status")
+        .then(setEngineStatus)
+        .catch((e) => console.error("Initial engine probe failed:", e));
+    }, 350);
+
+    return () => window.clearTimeout(timer);
   }, []);
+
+  const refreshEngineStatus = async () => {
+    const status = await invoke<EngineStatus>("get_engine_status");
+    setEngineStatus(status);
+    return status;
+  };
+
+  const handleOpenEngineModal = () => {
+    setIsEngineModalOpen(true);
+    void refreshEngineStatus().catch((e) => {
+      console.error("Failed to fetch engine status:", e);
+      toast.error("Không thể kiểm tra trạng thái yt-dlp / FFmpeg.");
+    });
+  };
 
   // Listen for real-time download progress events
   useEffect(() => {
@@ -235,7 +251,33 @@ export default function App() {
 
   // Start Download
   const handleStartDownload = async (req: DownloadRequest) => {
-    // Add to task list immediately
+    if (!req.output_dir?.trim()) {
+      toast.error("Chưa chọn thư mục tải về.");
+      await handleSelectFolder();
+      return;
+    }
+
+    let status = engineStatus;
+    try {
+      if (!status) status = await refreshEngineStatus();
+    } catch (e) {
+      toast.error("Không kiểm tra được Engine. Hãy mở mục Engine để kiểm tra dependency.");
+      setIsEngineModalOpen(true);
+      return;
+    }
+
+    if (!status.ytdlp_available || !status.ffmpeg_available) {
+      setIsEngineModalOpen(true);
+      if (!status.ytdlp_available && !status.ffmpeg_available) {
+        toast.error("Thiếu yt-dlp và FFmpeg. Cài Engine trước khi tải.");
+      } else if (!status.ytdlp_available) {
+        toast.error("Thiếu yt-dlp. Bấm Cài yt-dlp trong Engine.");
+      } else {
+        toast.error("Thiếu FFmpeg. Đây là dependency cần để ghép video + audio và tách MP3.");
+      }
+      return;
+    }
+
     const newTask: DownloadTask = {
       id: req.id,
       url: req.url,
@@ -259,10 +301,15 @@ export default function App() {
     try {
       await invoke("start_download", { req });
     } catch (err: any) {
-      toast.error(typeof err === "string" ? err : "Lỗi khi khởi chạy tiến trình tải");
+      const message = typeof err === "string" ? err : "Lỗi khi khởi chạy tiến trình tải";
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === req.id ? { ...t, status: "error", errorMessage: message, totalSize: "0 B" } : t
+        )
+      );
+      toast.error(message);
     }
   };
-
   // Batch download playlist items
   const handleDownloadPlaylistSelected = (entries: PlaylistEntry[]) => {
     entries.forEach((entry, idx) => {
@@ -355,27 +402,39 @@ export default function App() {
     }
   };
 
-  // Update engine
+  // Update/install dependencies
   const handleUpdateEngine = async () => {
     setIsUpdatingEngine(true);
-    toast.loading("Đang tải & cập nhật lõi yt-dlp mới nhất...");
+    const toastId = toast.loading("Đang tải yt-dlp mới nhất...");
     try {
       await invoke("update_engine");
-      const status = await invoke<EngineStatus>("get_engine_status");
-      setEngineStatus(status);
-      toast.dismiss();
-      toast.success("Đã cập nhật lõi yt-dlp thành công!");
+      await refreshEngineStatus();
+      toast.success("yt-dlp đã sẵn sàng!", { id: toastId });
     } catch (err: any) {
-      toast.dismiss();
-      toast.error(typeof err === "string" ? err : "Cập nhật yt-dlp thất bại.");
+      toast.error(typeof err === "string" ? err : "Cập nhật yt-dlp thất bại.", { id: toastId });
     } finally {
       setIsUpdatingEngine(false);
     }
   };
 
+  const handleInstallFfmpeg = async () => {
+    setIsInstallingFfmpeg(true);
+    const toastId = toast.loading("Đang tải và cài FFmpeg (~160 MB). Có thể mất vài phút...");
+    try {
+      await invoke("install_ffmpeg");
+      await refreshEngineStatus();
+      toast.success("FFmpeg + ffprobe đã sẵn sàng!", { id: toastId });
+    } catch (err: any) {
+      toast.error(typeof err === "string" ? err : "Cài FFmpeg thất bại.", { id: toastId });
+    } finally {
+      setIsInstallingFfmpeg(false);
+    }
+  };
   const activeTaskCount = tasks.filter(
     (t) => t.status === "downloading" || t.status === "merging" || t.status === "queued"
   ).length;
+
+  const isEngineReady = !!engineStatus?.ytdlp_available && !!engineStatus?.ffmpeg_available;
 
   return (
     <div className="relative min-h-screen w-full bg-slate-950 text-slate-100 flex flex-col pt-11 overflow-hidden select-none">
@@ -387,7 +446,7 @@ export default function App() {
       {/* Custom Window TitleBar */}
       <TitleBar
         engineStatus={engineStatus}
-        onOpenEngineModal={() => setIsEngineModalOpen(true)}
+        onOpenEngineModal={handleOpenEngineModal}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
@@ -426,7 +485,37 @@ export default function App() {
             </button>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <button
+              onClick={handleSelectFolder}
+              className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-white/[0.06] border border-white/[0.06] text-slate-300 transition-all cursor-pointer max-w-[320px]"
+              title="Chọn thư mục tải về"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span className="text-[10px] font-mono truncate">{settings.defaultDownloadDir || "Chọn nơi lưu"}</span>
+            </button>
+
+            <button
+              onClick={handleOpenEngineModal}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[10px] font-bold transition-all cursor-pointer ${
+                engineStatus === null
+                  ? "bg-white/[0.04] border-white/[0.08] text-slate-300"
+                  : isEngineReady
+                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+                    : "bg-amber-500/10 border-amber-500/25 text-amber-300"
+              }`}
+              title="Engine & Dependencies"
+            >
+              {engineStatus === null ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : isEngineReady ? (
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              ) : (
+                <AlertCircle className="w-3.5 h-3.5" />
+              )}
+              <span>{engineStatus === null ? "ENGINE..." : isEngineReady ? "ENGINE OK" : "THIẾU ENGINE"}</span>
+            </button>
+
             <button
               onClick={() => setIsSettingsOpen(true)}
               className="p-2 rounded-xl hover:bg-white/[0.08] text-slate-400 hover:text-white transition-all cursor-pointer"
@@ -475,6 +564,43 @@ export default function App() {
                     <span className="font-semibold">Đa luồng siêu tốc</span>
                   </div>
                 </div>
+              </div>
+
+              {engineStatus !== null && !isEngineReady && (
+                <button
+                  onClick={handleOpenEngineModal}
+                  className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/20 text-left transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-amber-200">Engine chưa hoàn tất</div>
+                      <div className="text-[11px] text-amber-100/70 truncate">
+                        {!engineStatus.ytdlp_available ? "Thiếu yt-dlp" : "yt-dlp OK"} • {!engineStatus.ffmpeg_available ? "Thiếu FFmpeg/ffprobe" : "FFmpeg OK"} — bấm để cài.
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-amber-300 shrink-0">MỞ ENGINE →</span>
+                </button>
+              )}
+
+              {/* Quick destination selector: visible even before a URL is analyzed. */}
+              <div className="flex items-center justify-between gap-3 px-3.5 py-3 rounded-2xl glass-panel">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <FolderOpen className="w-4 h-4 text-indigo-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] uppercase tracking-wide font-bold text-slate-500">Video sẽ tải về</div>
+                    <div className="text-[11px] font-mono text-slate-300 truncate" title={settings.defaultDownloadDir}>
+                      {settings.defaultDownloadDir || "Chưa chọn thư mục"}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={handleSelectFolder}
+                  className="px-3 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/25 text-[11px] font-bold text-indigo-300 cursor-pointer shrink-0"
+                >
+                  Chọn thư mục
+                </button>
               </div>
 
               {/* URL Input Box */}
@@ -554,7 +680,9 @@ export default function App() {
         onClose={() => setIsEngineModalOpen(false)}
         engineStatus={engineStatus}
         onUpdateEngine={handleUpdateEngine}
+        onInstallFfmpeg={handleInstallFfmpeg}
         isUpdating={isUpdatingEngine}
+        isInstallingFfmpeg={isInstallingFfmpeg}
       />
     </div>
   );

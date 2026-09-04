@@ -35,6 +35,7 @@ pub fn run() {
             cancel_download,
             get_engine_status,
             update_engine,
+            install_ffmpeg,
             get_default_download_dir,
             open_in_folder,
             open_file,

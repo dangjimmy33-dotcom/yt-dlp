@@ -1,6 +1,6 @@
 use crate::engine_manager::{get_ffmpeg_path, get_ytdlp_path};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
@@ -299,33 +299,55 @@ pub async fn execute_download(
     active_map: Arc<Mutex<HashMap<String, u32>>>,
 ) -> Result<(), String> {
     let ytdlp_path = get_ytdlp_path();
-    let mut cmd = Command::new(&ytdlp_path);
-
-    // Basic progress formatting template
-    cmd.arg("--newline")
-        .arg("--progress-template")
-        .arg("FLOWDL_PROGRESS|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._total_bytes_estimate_str)s|%(progress.status)s");
-
-    // FFmpeg path if available
-    if let Some(ffmpeg_p) = get_ffmpeg_path() {
-        if let Some(parent) = ffmpeg_p.parent() {
-            cmd.arg("--ffmpeg-location").arg(parent);
-        }
+    if !ytdlp_path.exists() {
+        return Err("Thiếu yt-dlp. Mở mục Engine và cài/cập nhật yt-dlp trước khi tải.".to_string());
     }
 
-    // Output template
-    let template = if let Some(ref custom_name) = req.custom_filename {
-        if !custom_name.is_empty() {
-            format!("{}/{}.%(ext)s", req.output_dir, custom_name)
+    let ffmpeg_path = get_ffmpeg_path().ok_or_else(|| {
+        "Thiếu FFmpeg/ffprobe. FFmpeg là dependency bắt buộc để ghép video + audio, tách MP3 và xử lý hậu kỳ. Mở mục Engine và bấm Cài FFmpeg.".to_string()
+    })?;
+
+    if req.output_dir.trim().is_empty() {
+        return Err("Chưa chọn thư mục tải về. Hãy chọn thư mục lưu trước khi bắt đầu.".to_string());
+    }
+
+    tokio::fs::create_dir_all(&req.output_dir)
+        .await
+        .map_err(|e| format!("Không thể tạo/mở thư mục tải '{}': {e}", req.output_dir))?;
+
+    let mut cmd = Command::new(&ytdlp_path);
+
+    cmd.arg("--newline")
+        .arg("--progress-template")
+        .arg("FLOWDL_PROGRESS|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._total_bytes_estimate_str)s|%(progress.status)s")
+        .arg("--print")
+        .arg("after_move:FLOWDL_FILE|%(filepath)s")
+        .arg("--ffmpeg-location")
+        .arg(ffmpeg_path.parent().unwrap_or(&ffmpeg_path))
+        .arg("-P")
+        .arg(&req.output_dir)
+        .arg("--trim-filenames")
+        .arg("180");
+
+    #[cfg(windows)]
+    cmd.arg("--windows-filenames");
+
+    // Keep the output template as a filename only. The destination directory is
+    // supplied separately via -P, which avoids Windows path/template edge cases.
+    let filename_template = if let Some(ref custom_name) = req.custom_filename {
+        if !custom_name.trim().is_empty() {
+            format!("{}.%(ext)s", custom_name.trim())
         } else {
-            format!("{}/%(title)s.%(ext)s", req.output_dir)
+            "%(title)s.%(ext)s".to_string()
         }
     } else {
-        format!("{}/%(title)s.%(ext)s", req.output_dir)
+        "%(title)s.%(ext)s".to_string()
     };
-    cmd.arg("-o").arg(&template);
+    cmd.arg("-o").arg(filename_template);
 
-    // Format & Quality selection
+    // Format & Quality selection. These selections intentionally use separate
+    // bestvideo+bestaudio streams; FFmpeg is checked above so merging cannot
+    // mysteriously fail at the end of the download.
     if req.download_type == "audio" {
         cmd.arg("-x");
         let audio_fmt = req.audio_format.as_deref().unwrap_or("mp3");
@@ -336,26 +358,10 @@ pub async fn execute_download(
         if !fid.is_empty() && fid != "auto" {
             cmd.arg("-f").arg(fid);
         } else {
-            match req.quality.as_str() {
-                "2160p" => { cmd.arg("-f").arg("bestvideo[height<=2160]+bestaudio/best[height<=2160]/best"); }
-                "1440p" => { cmd.arg("-f").arg("bestvideo[height<=1440]+bestaudio/best[height<=1440]/best"); }
-                "1080p" => { cmd.arg("-f").arg("bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"); }
-                "720p" => { cmd.arg("-f").arg("bestvideo[height<=720]+bestaudio/best[height<=720]/best"); }
-                "480p" => { cmd.arg("-f").arg("bestvideo[height<=480]+bestaudio/best[height<=480]/best"); }
-                "360p" => { cmd.arg("-f").arg("bestvideo[height<=360]+bestaudio/best[height<=360]/best"); }
-                _ => { cmd.arg("-f").arg("bestvideo+bestaudio/best"); }
-            }
+            add_quality_format(&mut cmd, &req.quality);
         }
     } else {
-        match req.quality.as_str() {
-            "2160p" => { cmd.arg("-f").arg("bestvideo[height<=2160]+bestaudio/best[height<=2160]/best"); }
-            "1440p" => { cmd.arg("-f").arg("bestvideo[height<=1440]+bestaudio/best[height<=1440]/best"); }
-            "1080p" => { cmd.arg("-f").arg("bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"); }
-            "720p" => { cmd.arg("-f").arg("bestvideo[height<=720]+bestaudio/best[height<=720]/best"); }
-            "480p" => { cmd.arg("-f").arg("bestvideo[height<=480]+bestaudio/best[height<=480]/best"); }
-            "360p" => { cmd.arg("-f").arg("bestvideo[height<=360]+bestaudio/best[height<=360]/best"); }
-            _ => { cmd.arg("-f").arg("bestvideo+bestaudio/best"); }
-        }
+        add_quality_format(&mut cmd, &req.quality);
     }
 
     if req.embed_metadata {
@@ -377,14 +383,12 @@ pub async fn execute_download(
         }
     }
 
-    // Trim video by section
     if let (Some(ref start), Some(ref end)) = (&req.trim_start, &req.trim_end) {
         if !start.is_empty() && !end.is_empty() {
             cmd.arg("--download-sections").arg(format!("*{}-{}", start, end));
         }
     }
 
-    // Custom arguments
     if let Some(ref extra) = req.custom_args {
         if !extra.trim().is_empty() {
             for arg in extra.split_whitespace() {
@@ -396,12 +400,14 @@ pub async fn execute_download(
     cmd.arg(&req.url);
 
     #[cfg(windows)]
-    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
 
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to start download process: {}", e))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Không thể khởi chạy yt-dlp: {e}"))?;
     let task_id = req.id.clone();
 
     if let Some(pid) = child.id() {
@@ -409,14 +415,23 @@ pub async fn execute_download(
         map.insert(task_id.clone(), pid);
     }
 
-    let stdout = child.stdout.take().ok_or("Failed to open stdout")?;
-    let mut reader = BufReader::new(stdout).lines();
+    let stdout = child.stdout.take().ok_or("Không thể đọc stdout của yt-dlp")?;
+    let stderr = child.stderr.take().ok_or("Không thể đọc stderr của yt-dlp")?;
+
+    let output_path = Arc::new(Mutex::new(None::<String>));
+    let last_errors = Arc::new(Mutex::new(VecDeque::<String>::with_capacity(24)));
 
     let app_handle = app.clone();
     let current_id = task_id.clone();
-
-    tokio::spawn(async move {
+    let output_path_for_reader = output_path.clone();
+    let stdout_task = tokio::spawn(async move {
+        let mut reader = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = reader.next_line().await {
+            if let Some(path) = line.strip_prefix("FLOWDL_FILE|") {
+                *output_path_for_reader.lock().await = Some(path.trim().to_string());
+                continue;
+            }
+
             if line.starts_with("FLOWDL_PROGRESS|") {
                 let parts: Vec<&str> = line.split('|').collect();
                 if parts.len() >= 6 {
@@ -425,7 +440,6 @@ pub async fn execute_download(
                     let speed = parts[2].trim().to_string();
                     let eta = parts[3].trim().to_string();
                     let total_size = parts[4].trim().to_string();
-                    let _status = parts[5].trim().to_string();
 
                     let _ = app_handle.emit(
                         "download-progress",
@@ -445,15 +459,44 @@ pub async fn execute_download(
         }
     });
 
-    let status = child.wait().await.map_err(|e| format!("Process error: {}", e))?;
+    // yt-dlp sends useful diagnostics to stderr. Always drain it so the pipe
+    // cannot fill and deadlock the child, and retain the tail for an exact UI error.
+    let errors_for_reader = last_errors.clone();
+    let stderr_task = tokio::spawn(async move {
+        let mut reader = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            let line = line.trim().to_string();
+            if line.is_empty() {
+                continue;
+            }
+            let mut errors = errors_for_reader.lock().await;
+            if errors.len() >= 24 {
+                errors.pop_front();
+            }
+            errors.push_back(line);
+        }
+    });
 
-    // Remove from active map
-    {
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("Lỗi khi chờ tiến trình yt-dlp: {e}"))?;
+    let _ = stdout_task.await;
+    let _ = stderr_task.await;
+
+    // If the task was removed before the process finished, cancel_download did it.
+    // Do not turn a user cancellation into a red error card afterwards.
+    let was_active = {
         let mut map = active_map.lock().await;
-        map.remove(&task_id);
+        map.remove(&task_id).is_some()
+    };
+
+    if !was_active && !status.success() {
+        return Ok(());
     }
 
     if status.success() {
+        let final_path = output_path.lock().await.clone();
         let _ = app.emit(
             "download-progress",
             DownloadProgressEvent {
@@ -461,27 +504,40 @@ pub async fn execute_download(
                 percent: 100.0,
                 speed: "0 B/s".to_string(),
                 eta: "00:00".to_string(),
-                total_size: "Completed".to_string(),
+                total_size: "Hoàn thành".to_string(),
                 status: "completed".to_string(),
                 error_message: None,
-                output_path: Some(req.output_dir),
+                output_path: final_path.or_else(|| Some(req.output_dir.clone())),
             },
         );
         Ok(())
     } else {
-        let _ = app.emit(
-            "download-progress",
-            DownloadProgressEvent {
-                task_id: task_id.clone(),
-                percent: 0.0,
-                speed: "0 B/s".to_string(),
-                eta: "00:00".to_string(),
-                total_size: "0 B".to_string(),
-                status: "error".to_string(),
-                error_message: Some("Download process failed or was interrupted".to_string()),
-                output_path: None,
-            },
-        );
-        Err("Download process exited with non-zero status".to_string())
+        let errors = last_errors.lock().await;
+        let mut message = errors
+            .iter()
+            .rev()
+            .take(8)
+            .cloned()
+            .collect::<Vec<_>>();
+        message.reverse();
+        let details = message.join("\n");
+        if details.is_empty() {
+            Err(format!("yt-dlp thoát với mã lỗi {:?}. Không có stderr chi tiết.", status.code()))
+        } else {
+            Err(details)
+        }
     }
+}
+
+fn add_quality_format(cmd: &mut Command, quality: &str) {
+    let selector = match quality {
+        "2160p" => "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best",
+        "1440p" => "bestvideo[height<=1440]+bestaudio/best[height<=1440]/best",
+        "1080p" => "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+        "720p" => "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+        "480p" => "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+        "360p" => "bestvideo[height<=360]+bestaudio/best[height<=360]/best",
+        _ => "bestvideo+bestaudio/best",
+    };
+    cmd.arg("-f").arg(selector);
 }

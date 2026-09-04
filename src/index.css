@@ -146,3 +146,23 @@
   background-size: 300% 300%;
   animation: progressWave 4s ease infinite;
 }
+
+/* Tauri v2 custom titlebar (Windows/WebView2)
+   Use a native draggable region instead of manually calling startDragging()
+   on every mouse-down. Interactive controls explicitly opt out. */
+.titlebar-drag,
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.titlebar-no-drag,
+[data-tauri-no-drag],
+.titlebar-drag button,
+.titlebar-drag input,
+.titlebar-drag textarea,
+.titlebar-drag select,
+.titlebar-drag a {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}

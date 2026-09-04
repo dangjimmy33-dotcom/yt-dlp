@@ -96,6 +96,15 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
             )}
             <span>{task.totalSize || "Đang xử lý..."}</span>
           </div>
+
+          {isError && task.errorMessage && (
+            <div
+              className="mt-2 px-2.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-[10px] leading-relaxed text-rose-200 whitespace-pre-wrap break-words select-text"
+              title={task.errorMessage}
+            >
+              <span className="font-bold">Chi tiết lỗi: </span>{task.errorMessage}
+            </div>
+          )}
         </div>
       </div>
 

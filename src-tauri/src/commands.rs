@@ -1,10 +1,13 @@
-use crate::engine_manager::{check_status, download_ytdlp_binary, EngineStatus};
+use crate::engine_manager::{
+    check_status, download_ffmpeg_binary, download_ytdlp_binary, EngineStatus,
+};
 use crate::ytdlp::{
-    execute_download, fetch_media_metadata, DownloadManager, DownloadRequest, MediaInfo,
+    execute_download, fetch_media_metadata, DownloadManager, DownloadProgressEvent, DownloadRequest,
+    MediaInfo,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command]
 pub async fn fetch_media_info(
@@ -23,16 +26,32 @@ pub async fn start_download(
     let active_map = manager.active_processes.clone();
     let req_clone = req.clone();
     let task_id = req.id.clone();
+    let app_for_task = app.clone();
 
     tokio::spawn(async move {
-        let _ = execute_download(app, req_clone, active_map).await;
+        if let Err(error) = execute_download(app_for_task.clone(), req_clone, active_map).await {
+            let _ = app_for_task.emit(
+                "download-progress",
+                DownloadProgressEvent {
+                    task_id: task_id.clone(),
+                    percent: 0.0,
+                    speed: "0 B/s".to_string(),
+                    eta: "--:--".to_string(),
+                    total_size: "0 B".to_string(),
+                    status: "error".to_string(),
+                    error_message: Some(error),
+                    output_path: None,
+                },
+            );
+        }
     });
 
-    Ok(task_id)
+    Ok(req.id)
 }
 
 #[tauri::command]
 pub async fn cancel_download(
+    app: AppHandle,
     task_id: String,
     manager: State<'_, Arc<DownloadManager>>,
 ) -> Result<(), String> {
@@ -40,8 +59,10 @@ pub async fn cancel_download(
     if let Some(pid) = map.remove(&task_id) {
         #[cfg(windows)]
         {
+            use std::os::windows::process::CommandExt;
             let _ = std::process::Command::new("taskkill")
                 .args(["/F", "/T", "/PID", &pid.to_string()])
+                .creation_flags(0x0800_0000)
                 .output();
         }
         #[cfg(unix)]
@@ -50,19 +71,41 @@ pub async fn cancel_download(
                 .args(["-9", &pid.to_string()])
                 .output();
         }
+        drop(map);
+
+        let _ = app.emit(
+            "download-progress",
+            DownloadProgressEvent {
+                task_id,
+                percent: 0.0,
+                speed: "0 B/s".to_string(),
+                eta: "--:--".to_string(),
+                total_size: "Đã hủy".to_string(),
+                status: "cancelled".to_string(),
+                error_message: None,
+                output_path: None,
+            },
+        );
         return Ok(());
     }
     Err("Download task not active".to_string())
 }
 
 #[tauri::command]
-pub fn get_engine_status() -> EngineStatus {
-    check_status()
+pub async fn get_engine_status() -> Result<EngineStatus, String> {
+    tauri::async_runtime::spawn_blocking(check_status)
+        .await
+        .map_err(|e| format!("Không thể kiểm tra engine: {e}"))
 }
 
 #[tauri::command]
 pub async fn update_engine() -> Result<String, String> {
     download_ytdlp_binary().await
+}
+
+#[tauri::command]
+pub async fn install_ffmpeg() -> Result<String, String> {
+    download_ffmpeg_binary().await
 }
 
 #[tauri::command]
@@ -84,8 +127,10 @@ pub fn open_in_folder(path: String) -> Result<(), String> {
 
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
         std::process::Command::new("explorer")
             .arg(target)
+            .creation_flags(0x0800_0000)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -111,8 +156,10 @@ pub fn open_in_folder(path: String) -> Result<(), String> {
 pub fn open_file(path: String) -> Result<(), String> {
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
         std::process::Command::new("cmd")
             .args(["/C", "start", "", &path])
+            .creation_flags(0x0800_0000)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -159,4 +206,3 @@ pub fn close_window(window: tauri::Window) {
 pub fn start_drag_window(window: tauri::Window) {
     let _ = window.start_dragging();
 }
-
