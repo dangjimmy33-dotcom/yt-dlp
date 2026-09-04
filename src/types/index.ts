@@ -70,6 +70,17 @@ export interface DownloadRequest {
   trim_start?: string;
   trim_end?: string;
   custom_args?: string;
+  /** Referer captured from the browser page that requested a direct stream. */
+  referer?: string;
+  /** Marks a URL as a direct media/HLS/DASH stream instead of a normal webpage. */
+  direct_stream?: boolean;
+}
+
+export interface SniffedStreamPayload {
+  stream_url: string;
+  page_url: string;
+  page_title: string;
+  source_type: string;
 }
 
 export interface DownloadProgressEvent {

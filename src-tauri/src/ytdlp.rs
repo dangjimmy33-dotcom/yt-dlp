@@ -84,6 +84,10 @@ pub struct DownloadRequest {
     pub trim_start: Option<String>,
     pub trim_end: Option<String>,
     pub custom_args: Option<String>,
+    /// Referer captured from the browser page that requested a direct stream.
+    pub referer: Option<String>,
+    /// True when `url` is already a direct media/HLS/DASH stream.
+    pub direct_stream: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -466,7 +470,13 @@ pub async fn execute_download(
         cmd.arg("--paths").arg(format!("plugin:{}", plugins_dir.display()));
     }
 
-    let referer = crate::plugins::get_referer_for_url(&req.url);
+    // A captured direct stream must keep the page/player Referer that produced it.
+    // Fall back to the custom-domain plugin rule for normal webpage downloads.
+    let referer = req
+        .referer
+        .clone()
+        .filter(|v| !v.trim().is_empty())
+        .or_else(|| crate::plugins::get_referer_for_url(&req.url));
     if let Some(ref ref_url) = referer {
         cmd.arg("--referer").arg(ref_url);
     }
@@ -487,6 +497,10 @@ pub async fn execute_download(
 
     #[cfg(windows)]
     cmd.arg("--windows-filenames");
+
+    if req.direct_stream == Some(true) {
+        cmd.arg("--no-playlist");
+    }
 
     let filename_template = if let Some(ref custom_name) = req.custom_filename {
         if !custom_name.trim().is_empty() {
@@ -516,7 +530,9 @@ pub async fn execute_download(
             }
         }
 
-        if let Some(ref fid) = req.format_id {
+        if req.direct_stream == Some(true) {
+            cmd.arg("-f").arg("best");
+        } else if let Some(ref fid) = req.format_id {
             if !fid.is_empty() && fid != "auto" {
                 cmd.arg("-f").arg(fid);
             } else {
@@ -530,13 +546,13 @@ pub async fn execute_download(
     if req.embed_metadata {
         cmd.arg("--embed-metadata");
     }
-    if req.embed_thumbnail {
+    if req.embed_thumbnail && req.direct_stream != Some(true) {
         cmd.arg("--embed-thumbnail");
     }
     if req.embed_subtitles {
         cmd.arg("--embed-subs").arg("--sub-langs").arg("all");
     }
-    if req.sponsorblock {
+    if req.sponsorblock && req.direct_stream != Some(true) {
         cmd.arg("--sponsorblock-remove").arg("sponsor,intro,outro,selfpromo");
     }
 

@@ -14,6 +14,7 @@ import {
   AppSettings,
   EngineStatus,
   PlaylistEntry,
+  SniffedStreamPayload,
 } from "./types";
 
 import { TitleBar } from "./components/TitleBar";
@@ -58,7 +59,9 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [mediaInfo, setMediaInfo] = useState<MediaInfo | null>(null);
   const [detectedClipboardUrl, setDetectedClipboardUrl] = useState<string | null>(null);
+  const [pendingSniffedStream, setPendingSniffedStream] = useState<SniffedStreamPayload | null>(null);
   const lastCheckedClipboard = useRef<string>("");
+  const lastSniffedStream = useRef<{ url: string; at: number } | null>(null);
 
   // GitHub Update State
   const [githubRelease, setGithubRelease] = useState<GithubReleaseInfo | null>(null);
@@ -297,21 +300,21 @@ export default function App() {
     let unlistenSniffer: (() => void) | undefined;
     const setupSnifferListener = async () => {
       try {
-        unlistenSniffer = await listen<{
-          stream_url: string;
-          page_url: string;
-          page_title: string;
-          source_type: string;
-        }>("on-sniffed-stream", (event) => {
+        unlistenSniffer = await listen<SniffedStreamPayload>("on-sniffed-stream", (event) => {
           const payload = event.payload;
-          if (payload && payload.stream_url) {
-            playNotificationBell();
-            toast.success(`Đã bắt được luồng video: ${payload.page_title || "Video Stream"}`, {
-              description: payload.stream_url.slice(0, 60) + "...",
-            });
-            setUrl(payload.stream_url);
-            void handleAnalyze(payload.stream_url);
-          }
+          if (!payload?.stream_url) return;
+
+          const now = Date.now();
+          const last = lastSniffedStream.current;
+          if (last && last.url === payload.stream_url && now - last.at < 10_000) return;
+          lastSniffedStream.current = { url: payload.stream_url, at: now };
+
+          playNotificationBell();
+          toast.success(`Đã bắt được luồng video: ${payload.page_title || "Video Stream"}`, {
+            description: "Đang chuyển luồng sang hàng đợi tải...",
+          });
+          setUrl(payload.stream_url);
+          setPendingSniffedStream(payload);
         });
       } catch (e) {
         console.error("Failed to listen to on-sniffed-stream events:", e);
@@ -474,6 +477,43 @@ export default function App() {
       toast.error(message);
     }
   };
+  // A stream captured by the embedded browser is already a media URL.
+  // Do not run it through the normal webpage analyzer again; preserve its browser/page Referer
+  // and send it straight to the download pipeline.
+  useEffect(() => {
+    if (!pendingSniffedStream) return;
+
+    const payload = pendingSniffedStream;
+    setPendingSniffedStream(null);
+
+    if (!settings.defaultDownloadDir?.trim()) {
+      toast.warning("Đã bắt được luồng, nhưng chưa có thư mục tải. Hãy chọn nơi lưu rồi bắt lại luồng.");
+      setActiveNav("home");
+      return;
+    }
+
+    const req: DownloadRequest = {
+      id: `sniff-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      url: payload.stream_url,
+      title: payload.page_title?.trim() || "Web Stream",
+      download_type: "video",
+      quality: "best",
+      video_container: "mp4",
+      output_dir: settings.defaultDownloadDir,
+      embed_subtitles: false,
+      embed_thumbnail: false,
+      embed_metadata: settings.embedMetadata,
+      sponsorblock: false,
+      cookies_browser: settings.cookiesBrowser,
+      referer: payload.page_url,
+      direct_stream: true,
+    };
+
+    setActiveNav("downloads");
+    toast.info("Luồng đã được xác nhận. Đang thêm vào hàng đợi tải...");
+    void handleStartDownload(req);
+  }, [pendingSniffedStream]);
+
   // Batch download playlist items
   const handleDownloadPlaylistSelected = (entries: PlaylistEntry[]) => {
     entries.forEach((entry, idx) => {
@@ -689,7 +729,7 @@ export default function App() {
                 toast.info("Đang mở Trình duyệt bắt luồng video...");
               }}
               className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-white/[0.04] transition-all cursor-pointer"
-              title="Mở trình duyệt bắt luồng video (Bypass Cloudflare & player iframe)"
+              title="Mở trình duyệt nhúng để bắt URL media mà trang đang phát"
             >
               <Compass className="w-3.5 h-3.5 text-cyan-400" />
               <span>Bắt Link Web</span>
