@@ -38,12 +38,12 @@ export const UpdateNotificationModal: React.FC<UpdateNotificationModalProps> = (
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-extrabold text-white">Có Bản Cập Nhật Mới!</h3>
+                <h3 className="text-base font-extrabold text-white">Có Bản Cập Nhật Mới</h3>
                 <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-pink-500 text-[10px] font-black text-slate-950 uppercase tracking-wider shadow">
                   {releaseInfo.tagName}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">Một phiên bản mới hơn của YT-dlp đã sẵn sàng trên GitHub.</p>
+              <p className="text-xs text-slate-400 mt-0.5">Một phiên bản mới hơn đã sẵn sàng để nâng cấp.</p>
             </div>
           </div>
 
@@ -63,7 +63,7 @@ export const UpdateNotificationModal: React.FC<UpdateNotificationModalProps> = (
           </div>
 
           <div className="p-3 rounded-2xl bg-slate-950/60 border border-white/[0.06] text-xs text-slate-300 whitespace-pre-line leading-relaxed font-sans">
-            {releaseInfo.body ? releaseInfo.body : "Bản cập nhật tối ưu hiệu năng, sửa lỗi và nâng cấp engine yt-dlp mới nhất."}
+            {releaseInfo.body ? releaseInfo.body : "Bản cập nhật tối ưu hiệu năng, sửa lỗi và nâng cấp engine mới nhất."}
           </div>
         </div>
 
@@ -82,7 +82,7 @@ export const UpdateNotificationModal: React.FC<UpdateNotificationModalProps> = (
               className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.1] text-slate-200 transition-all cursor-pointer"
             >
               <ExternalLink className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Xem trên GitHub</span>
+              <span>Xem chi tiết</span>
             </button>
 
             <button
@@ -90,7 +90,7 @@ export const UpdateNotificationModal: React.FC<UpdateNotificationModalProps> = (
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold glass-button-primary cursor-pointer shadow-lg shadow-indigo-500/25"
             >
               <Download className="w-4 h-4" />
-              <span>TẢI BẢN MỚI NGAY</span>
+              <span>TẢI BẢN MỚI</span>
             </button>
           </div>
         </div>

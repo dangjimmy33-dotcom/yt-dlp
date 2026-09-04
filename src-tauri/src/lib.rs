@@ -37,6 +37,8 @@ pub fn run() {
             update_engine,
             install_ffmpeg,
             get_default_download_dir,
+            load_app_settings,
+            save_app_settings,
             open_in_folder,
             open_file,
             open_url,

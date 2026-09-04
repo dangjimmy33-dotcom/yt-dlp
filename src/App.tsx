@@ -43,6 +43,9 @@ import {
   RefreshCw,
   X,
   BellRing,
+  Video,
+  Music,
+  Search,
 } from "lucide-react";
 
 export default function App() {
@@ -131,18 +134,37 @@ export default function App() {
     } catch {}
   }, [settings]);
 
-  // Keep startup responsive: resolve the default folder immediately, then probe
-  // engines shortly after the first paint. Rust now runs that probe off the UI thread.
+  // Keep startup responsive: load settings from disk config, then probe engines.
   useEffect(() => {
-    if (!settings.defaultDownloadDir) {
-      void invoke<string>("get_default_download_dir")
-        .then((defaultDir) => {
-          if (defaultDir) {
-            setSettings((prev) => ({ ...prev, defaultDownloadDir: defaultDir }));
-          }
-        })
-        .catch((e) => console.error("Failed to get default download dir:", e));
-    }
+    void invoke<AppSettings | null>("load_app_settings")
+      .then((diskSettings) => {
+        if (diskSettings && diskSettings.defaultDownloadDir) {
+          setSettings((prev) => ({ ...prev, ...diskSettings }));
+        } else {
+          void invoke<string>("get_default_download_dir")
+            .then((defaultDir) => {
+              if (defaultDir) {
+                setSettings((prev) => ({
+                  ...prev,
+                  defaultDownloadDir: prev.defaultDownloadDir || defaultDir,
+                }));
+              }
+            })
+            .catch((e) => console.error("Failed to get default download dir:", e));
+        }
+      })
+      .catch(() => {
+        void invoke<string>("get_default_download_dir")
+          .then((defaultDir) => {
+            if (defaultDir) {
+              setSettings((prev) => ({
+                ...prev,
+                defaultDownloadDir: prev.defaultDownloadDir || defaultDir,
+              }));
+            }
+          })
+          .catch((e) => console.error("Failed to get default download dir:", e));
+      });
 
     const timer = window.setTimeout(() => {
       void invoke<EngineStatus>("get_engine_status")
@@ -153,7 +175,7 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  // Automatic GitHub Releases update checker with bell chime notification
+  // Automatic Releases update checker with bell chime notification
   useEffect(() => {
     const checkUpdates = async () => {
       try {
@@ -165,7 +187,7 @@ export default function App() {
             sessionStorage.setItem("flowdl_alerted_update_tag", info.tagName);
             playNotificationBell();
             setIsUpdateModalOpen(true);
-            toast.info(`🔔 Phát hiện bản cập nhật mới: ${info.tagName}!`);
+            toast.info(`Có bản cập nhật mới: ${info.tagName}`);
           }
         }
       } catch (err) {
@@ -518,12 +540,30 @@ export default function App() {
       });
 
       if (selected && typeof selected === "string") {
-        setSettings((prev) => ({ ...prev, defaultDownloadDir: selected }));
+        const updated = { ...settings, defaultDownloadDir: selected };
+        setSettings(updated);
+        try {
+          localStorage.setItem("flowdl_settings", JSON.stringify(updated));
+          await invoke("save_app_settings", { settings: updated });
+        } catch (err) {
+          console.error("Failed to persist folder setting:", err);
+        }
         toast.success(`Đã chọn thư mục: ${selected}`);
       }
     } catch (e) {
       console.error("Folder picker error:", e);
     }
+  };
+
+  const handleSaveSettings = async (newSettings: AppSettings) => {
+    setSettings(newSettings);
+    try {
+      localStorage.setItem("flowdl_settings", JSON.stringify(newSettings));
+      await invoke("save_app_settings", { settings: newSettings });
+    } catch (err) {
+      console.error("Failed to persist settings:", err);
+    }
+    toast.success("Đã lưu cài đặt");
   };
 
   // Update/install dependencies
@@ -672,9 +712,6 @@ export default function App() {
                       <h1 className="text-lg md:text-xl font-extrabold tracking-tight bg-gradient-to-r from-red-400 via-pink-300 to-indigo-300 bg-clip-text text-transparent">
                         yt-dlp Desktop Studio
                       </h1>
-                      <span className="px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 text-[10px] font-bold border border-indigo-500/30">
-                        Official Fork
-                      </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-0.5">
                       Công cụ tải video & tách nhạc đa năng, hiện đại với giao diện Glassmorphism mượt mà.
@@ -741,7 +778,8 @@ export default function App() {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
                         title="Tải ngay Video MP4 1080p"
                       >
-                        <span>🎬 Video 1080p</span>
+                        <Video className="w-3.5 h-3.5" />
+                        <span>Video 1080p</span>
                       </button>
                       <button
                         onClick={() => {
@@ -750,7 +788,8 @@ export default function App() {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
                         title="Tách ngay nhạc MP3 320k"
                       >
-                        <span>🎵 MP3 320k</span>
+                        <Music className="w-3.5 h-3.5" />
+                        <span>MP3 320k</span>
                       </button>
                       <button
                         onClick={() => {
@@ -758,9 +797,10 @@ export default function App() {
                           handleAnalyze(detectedClipboardUrl);
                           setDetectedClipboardUrl(null);
                         }}
-                        className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold transition-all cursor-pointer"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold transition-all cursor-pointer"
                       >
-                        🔍 Phân tích
+                        <Search className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Phân tích</span>
                       </button>
                       <button
                         onClick={() => setDetectedClipboardUrl(null)}
@@ -874,11 +914,7 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
-        onSaveSettings={(newSettings) => {
-          setSettings(newSettings);
-          toast.success("Đã lưu cài đặt!");
-        }}
-        onSelectFolder={handleSelectFolder}
+        onSaveSettings={handleSaveSettings}
       />
 
       <EngineStatusModal

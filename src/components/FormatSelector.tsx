@@ -18,6 +18,10 @@ import {
   Cpu,
   Volume2,
   Sliders,
+  Disc,
+  FileAudio,
+  Radio,
+  Zap,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -85,12 +89,12 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
   ];
 
   const audioFormats = [
-    { id: "mp3", label: "MP3 Audio", note: "Tương thích 100% loa, ô tô, điện thoại", icon: "🎵" },
-    { id: "flac", label: "FLAC Lossless", note: "Chất lượng phòng thu Audiophile nguyên bản", icon: "💎" },
-    { id: "m4a", label: "M4A (AAC)", note: "Tối ưu cho Apple iPhone, iPad, Mac", icon: "🍏" },
-    { id: "wav", label: "WAV Uncompressed", note: "Âm thanh gốc PCM không nén", icon: "🎼" },
-    { id: "opus", label: "OPUS Codec", note: "Codec hiện đại với độ trung thực cao", icon: "⚡" },
-    { id: "ogg", label: "OGG Vorbis", note: "Mã nguồn mở chất lượng cao", icon: "🎛️" },
+    { id: "mp3", label: "MP3 Audio", note: "Tương thích 100% mọi thiết bị", icon: Music, color: "text-indigo-400" },
+    { id: "flac", label: "FLAC Lossless", note: "Chất lượng phòng thu nguyên bản", icon: Disc, color: "text-emerald-400" },
+    { id: "m4a", label: "M4A (AAC)", note: "Tối ưu cho Apple & iOS", icon: FileAudio, color: "text-sky-400" },
+    { id: "wav", label: "WAV Uncompressed", note: "Âm thanh gốc PCM không nén", icon: Radio, color: "text-purple-400" },
+    { id: "opus", label: "OPUS Codec", note: "Codec hiện đại chất lượng cao", icon: Zap, color: "text-amber-400" },
+    { id: "ogg", label: "OGG Vorbis", note: "Mã nguồn mở chất lượng cao", icon: Sliders, color: "text-pink-400" },
   ];
 
   const audioBitrates = [
@@ -288,6 +292,7 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                 {audioFormats.map((af) => {
                   const isSelected = selectedAudioFormat === af.id;
+                  const Icon = af.icon;
                   return (
                     <div
                       key={af.id}
@@ -297,7 +302,9 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
-                        <span className="text-lg">{af.icon}</span>
+                        <div className={`p-2 rounded-xl bg-white/[0.04] ${af.color}`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
                         <div>
                           <span className="text-xs font-bold text-slate-100 block">{af.label}</span>
                           <span className="text-[11px] text-slate-400 block">{af.note}</span>

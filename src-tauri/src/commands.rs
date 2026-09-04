@@ -117,6 +117,32 @@ pub fn get_default_download_dir() -> String {
 }
 
 #[tauri::command]
+pub fn load_app_settings() -> Option<serde_json::Value> {
+    let mut config_path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    config_path.push("YT-DLP-Studio");
+    config_path.push("config.json");
+    if config_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&config_path) {
+            if let Ok(json) = serde_json::from_str(&content) {
+                return Some(json);
+            }
+        }
+    }
+    None
+}
+
+#[tauri::command]
+pub fn save_app_settings(settings: serde_json::Value) -> Result<(), String> {
+    let mut config_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    config_dir.push("YT-DLP-Studio");
+    let _ = std::fs::create_dir_all(&config_dir);
+    let config_path = config_dir.join("config.json");
+    let content = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    std::fs::write(&config_path, content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn open_in_folder(path: String) -> Result<(), String> {
     let p = PathBuf::from(&path);
     let target = if p.is_file() {
