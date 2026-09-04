@@ -78,6 +78,13 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
     setToEp(String(allEntries.length || 1));
     setCurrentPage(1);
     setExpandedItemId(null);
+    if (allEntries.length > 0 && allEntries.every((e) => e.entry_type === 'channel')) {
+      setTypeFilter('channel');
+    } else if (allEntries.length > 0 && allEntries.every((e) => e.entry_type === 'playlist' || e.is_playlist)) {
+      setTypeFilter('playlist');
+    } else {
+      setTypeFilter('all');
+    }
   }, [media.id, media.url, allEntries]);
 
   // Global format configuration
@@ -335,6 +342,90 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
 
   const channelUploader = media.uploader || 'YouTube Media';
 
+  const renderChannelCard = (entry: PlaylistEntry, index: number, isGrid: boolean) => {
+    return (
+      <div
+        key={entry.id || index}
+        className={`${
+          isGrid ? 'col-span-full' : 'w-full'
+        } rounded-3xl border border-indigo-500/30 bg-gradient-to-r from-slate-950/90 via-indigo-950/30 to-slate-900/90 p-4 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-5 hover:border-indigo-500/60 transition-all shadow-xl group`}
+      >
+        <div
+          onClick={() => onOpenItem && onOpenItem(entry.url)}
+          className="flex items-center gap-4 min-w-0 flex-1 cursor-pointer w-full sm:w-auto"
+        >
+          {/* Avatar circle */}
+          <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden bg-slate-900 border-2 border-indigo-500/50 shrink-0 shadow-xl group-hover:scale-105 transition-transform">
+            {entry.thumbnail ? (
+              <img
+                src={entry.thumbnail}
+                alt={entry.title}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-indigo-600/20 text-indigo-300 font-bold text-xl">
+                {entry.title.charAt(0).toUpperCase()}
+              </div>
+            )}
+          </div>
+
+          {/* Info */}
+          <div className="min-w-0 space-y-1.5 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-base sm:text-lg font-extrabold text-white group-hover:text-indigo-300 transition-colors">
+                {entry.title}
+              </h3>
+              <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/40">
+                Kênh YouTube
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-slate-400 font-medium flex-wrap">
+              <span className="text-slate-300 font-semibold">{entry.uploader || '@channel'}</span>
+              {entry.subscriber_count && (
+                <>
+                  <span>•</span>
+                  <span className="text-indigo-300 font-bold">{entry.subscriber_count}</span>
+                </>
+              )}
+            </div>
+
+            {entry.description && (
+              <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+                {entry.description}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+          <button
+            onClick={() => onOpenItem && onOpenItem(entry.url)}
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/30 cursor-pointer"
+          >
+            <Video className="w-4 h-4" />
+            <span>Xem Video của Kênh</span>
+          </button>
+          <button
+            onClick={() => {
+              const plUrl =
+                entry.url.includes('/@') || entry.url.includes('/channel/')
+                  ? `${entry.url.replace(/\/+$/, '')}/playlists`
+                  : entry.url;
+              if (onOpenItem) onOpenItem(plUrl);
+            }}
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-purple-300 border border-purple-500/30 text-xs font-bold transition-all cursor-pointer"
+          >
+            <ListVideo className="w-4 h-4" />
+            <span>Xem Playlists</span>
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 15 }}
@@ -344,6 +435,18 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
     >
       {/* 1. YOUTUBE-STYLE CHANNEL / SEARCH HEADER BANNER */}
       <div className="relative overflow-hidden rounded-3xl glass-panel p-4 sm:p-6 border border-white/10 shadow-2xl">
+        {onOpenItem && (media.url.includes('/videos') || media.url.includes('/playlists')) && (
+          <button
+            onClick={() => {
+              const baseName = channelUploader || 'YouTube';
+              onOpenItem(`ytchannel30:${baseName}`);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-indigo-300 border border-white/10 text-xs font-bold transition-all cursor-pointer mb-3"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <span>Quay lại danh sách Kênh</span>
+          </button>
+        )}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5 min-w-0">
             {/* Avatar circle */}
@@ -575,6 +678,12 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
         /* YOUTUBE-STYLE 16:9 GRID VIEW */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {paginatedEntries.map((entry, index) => {
+            const isEntryChannel =
+              entry.entry_type === 'channel' || entry.url.includes('/channel/') || entry.url.includes('/@');
+            if (isEntryChannel) {
+              return renderChannelCard(entry, index, true);
+            }
+
             const isSelected = selectedIds.has(entry.id);
             const isExpanded = expandedItemId === entry.id;
             const isEntryPlaylist =
@@ -718,6 +827,12 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
         /* YOUTUBE-STYLE HORIZONTAL LIST VIEW */
         <div className="space-y-3">
           {paginatedEntries.map((entry, index) => {
+            const isEntryChannel =
+              entry.entry_type === 'channel' || entry.url.includes('/channel/') || entry.url.includes('/@');
+            if (isEntryChannel) {
+              return renderChannelCard(entry, index, false);
+            }
+
             const isSelected = selectedIds.has(entry.id);
             const isExpanded = expandedItemId === entry.id;
             const isEntryPlaylist =

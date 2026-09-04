@@ -31,6 +31,10 @@ export interface PlaylistEntry {
   is_playlist?: boolean;
   playlist_count?: number;
   entry_type?: 'video' | 'playlist' | 'channel';
+  subscriber_count?: string;
+  description?: string;
+  is_verified?: boolean;
+  channel_url?: string;
 }
 
 export interface MediaInfo {

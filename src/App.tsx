@@ -30,6 +30,7 @@ import { EngineStatusModal } from "./components/EngineStatusModal";
 import { UpdateNotificationModal } from "./components/UpdateNotificationModal";
 import { PluginManagerModal } from "./components/PluginManagerModal";
 import { SupportedSitesModal } from "./components/SupportedSitesModal";
+import { SearchLoadingSkeleton } from "./components/SearchLoadingSkeleton";
 
 import { playNotificationBell, playSuccessChime } from "./utils/sound";
 import { checkForGithubUpdates, GithubReleaseInfo } from "./utils/updater";
@@ -1034,8 +1035,10 @@ export default function App() {
                 isLoading={isLoading}
               />
 
-              {/* Media Preview & Formats Card OR Search / Playlist Results List */}
-              {mediaInfo && (
+              {/* Loading Animation Skeleton OR Media Preview / Results */}
+              {isLoading ? (
+                <SearchLoadingSkeleton query={url} />
+              ) : mediaInfo ? (
                 mediaInfo.is_playlist || (mediaInfo.entries && mediaInfo.entries.length > 0) ? (
                   <SearchResultsList
                     media={mediaInfo}
@@ -1044,14 +1047,23 @@ export default function App() {
                     onStartSingleDownload={handleStartDownload}
                     onSelectFolder={handleSelectFolder}
                     onOpenItem={(itemUrl) => {
-                      setUrl(itemUrl);
-                      void handleAnalyze(itemUrl);
+                      let targetUrl = itemUrl;
+                      if (
+                        (targetUrl.includes("/channel/") || targetUrl.includes("/@")) &&
+                        !targetUrl.includes("/videos") &&
+                        !targetUrl.includes("/playlists") &&
+                        !targetUrl.includes("/streams")
+                      ) {
+                        targetUrl = `${targetUrl.replace(/\/+$/, "")}/videos`;
+                      }
+                      setUrl(targetUrl);
+                      void handleAnalyze(targetUrl);
                     }}
                     onSearchMore={(count) => {
                       const rawQuery = (url || mediaInfo.url || "")
-                        .replace(/^ytsearch\d+:/, "")
-                        .replace(/^ytplaylist:/, "")
-                        .replace(/^ytchannel:/, "")
+                        .replace(/^ytsearch\d*:/, "")
+                        .replace(/^ytplaylist\d*:/, "")
+                        .replace(/^ytchannel\d*:/, "")
                         .trim();
                       const target = `ytsearch${count}:${rawQuery}`;
                       setUrl(target);
@@ -1074,7 +1086,7 @@ export default function App() {
                     />
                   </div>
                 )
-              )}
+              ) : null}
             </motion.div>
           ) : (
             <motion.div

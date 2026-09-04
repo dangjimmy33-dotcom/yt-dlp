@@ -43,6 +43,10 @@ pub struct PlaylistEntry {
     pub is_playlist: Option<bool>,
     pub playlist_count: Option<usize>,
     pub entry_type: Option<String>,
+    pub subscriber_count: Option<String>,
+    pub description: Option<String>,
+    pub is_verified: Option<bool>,
+    pub channel_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -522,11 +526,15 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
                     entry_url
                 };
 
-                let thumbnail = entry.get("thumbnail")
+                let mut thumbnail = entry.get("thumbnail")
                     .or_else(|| entry.get("thumbnails").and_then(|t| t.as_array()).and_then(|a| a.last()).and_then(|t| t.get("url")))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
+
+                if thumbnail.starts_with("//") {
+                    thumbnail = format!("https:{}", thumbnail);
+                }
 
                 let is_entry_playlist = full_url.contains("/playlist?list=")
                     || entry.get("playlist_count").is_some()
@@ -534,7 +542,34 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
 
                 let is_entry_channel = full_url.contains("/channel/")
                     || full_url.contains("/@")
-                    || entry.get("_type").and_then(|v| v.as_str()) == Some("channel");
+                    || entry.get("_type").and_then(|v| v.as_str()) == Some("channel")
+                    || entry.get("ie_key").and_then(|v| v.as_str()) == Some("YoutubeTab");
+
+                let subscriber_count = entry.get("channel_follower_count")
+                    .and_then(|v| v.as_u64())
+                    .map(|c| {
+                        if c >= 1_000_000 {
+                            format!("{:.2} Tr người đăng ký", c as f64 / 1_000_000.0)
+                        } else if c >= 1_000 {
+                            format!("{:.1} N người đăng ký", c as f64 / 1_000.0)
+                        } else {
+                            format!("{} người đăng ký", c)
+                        }
+                    });
+
+                let description = entry.get("description").and_then(|v| v.as_str()).map(String::from);
+                let is_verified = entry.get("channel_is_verified").and_then(|v| v.as_bool());
+                let channel_url = entry.get("channel_url").or_else(|| entry.get("uploader_url")).and_then(|v| v.as_str()).map(String::from);
+
+                let target_url = if is_entry_channel {
+                    if let Some(ref u_url) = entry.get("uploader_url").and_then(|v| v.as_str()) {
+                        u_url.to_string()
+                    } else {
+                        full_url
+                    }
+                } else {
+                    full_url
+                };
 
                 let playlist_count = entry.get("playlist_count")
                     .and_then(|v| v.as_u64())
@@ -551,13 +586,17 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
                 entries.push(PlaylistEntry {
                     id,
                     title,
-                    url: full_url,
+                    url: target_url,
                     duration: entry.get("duration").and_then(|v| v.as_f64()),
                     uploader: entry.get("uploader").or_else(|| entry.get("channel")).and_then(|v| v.as_str()).map(String::from),
                     thumbnail: if thumbnail.is_empty() { None } else { Some(thumbnail) },
                     is_playlist: if is_entry_playlist { Some(true) } else { None },
                     playlist_count,
                     entry_type,
+                    subscriber_count,
+                    description,
+                    is_verified,
+                    channel_url,
                 });
             }
         }
