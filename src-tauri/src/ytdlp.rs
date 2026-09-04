@@ -69,8 +69,11 @@ pub struct DownloadRequest {
     pub download_type: String, // "video" | "audio" | "custom"
     pub quality: String,       // "best" | "2160p" | "1440p" | "1080p" | "720p" | "480p" | "360p"
     pub format_id: Option<String>,
-    pub audio_format: Option<String>,   // "mp3" | "m4a" | "flac" | "wav" | "opus"
+    pub video_container: Option<String>, // "mp4" | "mkv" | "webm" | "mov"
+    pub video_codec: Option<String>,     // "h264" | "hevc" | "av1" | "vp9"
+    pub audio_format: Option<String>,   // "mp3" | "m4a" | "flac" | "wav" | "opus" | "ogg"
     pub audio_quality: Option<String>,  // "320K" | "256K" | "192K" | "128K"
+    pub audio_normalize: Option<bool>,
     pub output_dir: String,
     pub custom_filename: Option<String>,
     pub embed_subtitles: bool,
@@ -354,14 +357,26 @@ pub async fn execute_download(
         cmd.arg("--audio-format").arg(audio_fmt);
         let audio_q = req.audio_quality.as_deref().unwrap_or("320K");
         cmd.arg("--audio-quality").arg(audio_q);
-    } else if let Some(ref fid) = req.format_id {
-        if !fid.is_empty() && fid != "auto" {
-            cmd.arg("-f").arg(fid);
-        } else {
-            add_quality_format(&mut cmd, &req.quality);
+
+        if req.audio_normalize == Some(true) {
+            cmd.arg("--postprocessor-args").arg("ffmpeg:-af loudnorm");
         }
     } else {
-        add_quality_format(&mut cmd, &req.quality);
+        if let Some(ref container) = req.video_container {
+            if !container.is_empty() && container != "auto" {
+                cmd.arg("--merge-output-format").arg(container);
+            }
+        }
+
+        if let Some(ref fid) = req.format_id {
+            if !fid.is_empty() && fid != "auto" {
+                cmd.arg("-f").arg(fid);
+            } else {
+                add_quality_and_codec_format(&mut cmd, &req.quality, req.video_codec.as_deref());
+            }
+        } else {
+            add_quality_and_codec_format(&mut cmd, &req.quality, req.video_codec.as_deref());
+        }
     }
 
     if req.embed_metadata {
@@ -529,15 +544,41 @@ pub async fn execute_download(
     }
 }
 
-fn add_quality_format(cmd: &mut Command, quality: &str) {
-    let selector = match quality {
-        "2160p" => "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best",
-        "1440p" => "bestvideo[height<=1440]+bestaudio/best[height<=1440]/best",
-        "1080p" => "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-        "720p" => "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-        "480p" => "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
-        "360p" => "bestvideo[height<=360]+bestaudio/best[height<=360]/best",
-        _ => "bestvideo+bestaudio/best",
+fn add_quality_and_codec_format(cmd: &mut Command, quality: &str, codec: Option<&str>) {
+    let max_height = match quality {
+        "2160p" => Some(2160),
+        "1440p" => Some(1440),
+        "1080p" => Some(1080),
+        "720p" => Some(720),
+        "480p" => Some(480),
+        "360p" => Some(360),
+        _ => None,
     };
+
+    let codec_filter = match codec {
+        Some("h264") | Some("avc") => Some("[vcodec^=avc1]"),
+        Some("hevc") | Some("h265") => Some("[vcodec^=hvc1]"),
+        Some("vp9") => Some("[vcodec^=vp9]"),
+        Some("av1") => Some("[vcodec^=av01]"),
+        _ => None,
+    };
+
+    let selector = match (max_height, codec_filter) {
+        (Some(h), Some(cf)) => format!(
+            "bestvideo[height<={h}]{cf}+bestaudio/bestvideo[height<={h}]+bestaudio/best[height<={h}]/best",
+            h = h,
+            cf = cf
+        ),
+        (Some(h), None) => format!(
+            "bestvideo[height<={h}]+bestaudio/best[height<={h}]/best",
+            h = h
+        ),
+        (None, Some(cf)) => format!(
+            "bestvideo{cf}+bestaudio/bestvideo+bestaudio/best",
+            cf = cf
+        ),
+        (None, None) => "bestvideo+bestaudio/best".to_string(),
+    };
+
     cmd.arg("-f").arg(selector);
 }

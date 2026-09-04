@@ -24,6 +24,10 @@ import { DownloadQueue } from "./components/DownloadQueue";
 import { PlaylistModal } from "./components/PlaylistModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { EngineStatusModal } from "./components/EngineStatusModal";
+import { UpdateNotificationModal } from "./components/UpdateNotificationModal";
+
+import { playNotificationBell, playSuccessChime } from "./utils/sound";
+import { checkForGithubUpdates, GithubReleaseInfo } from "./utils/updater";
 
 import {
   Download,
@@ -37,6 +41,8 @@ import {
   CheckCircle2,
   AlertCircle,
   RefreshCw,
+  X,
+  BellRing,
 } from "lucide-react";
 
 export default function App() {
@@ -44,6 +50,12 @@ export default function App() {
   const [url, setUrl] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [mediaInfo, setMediaInfo] = useState<MediaInfo | null>(null);
+  const [detectedClipboardUrl, setDetectedClipboardUrl] = useState<string | null>(null);
+  const lastCheckedClipboard = useRef<string>("");
+
+  // GitHub Update State
+  const [githubRelease, setGithubRelease] = useState<GithubReleaseInfo | null>(null);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
 
   const [tasks, setTasks] = useState<DownloadTask[]>(() => {
     try {
@@ -141,6 +153,36 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  // Automatic GitHub Releases update checker with bell chime notification
+  useEffect(() => {
+    const checkUpdates = async () => {
+      try {
+        const info = await checkForGithubUpdates();
+        if (info && info.hasUpdate) {
+          setGithubRelease(info);
+          const alertedTag = sessionStorage.getItem("flowdl_alerted_update_tag");
+          if (alertedTag !== info.tagName) {
+            sessionStorage.setItem("flowdl_alerted_update_tag", info.tagName);
+            playNotificationBell();
+            setIsUpdateModalOpen(true);
+            toast.info(`🔔 Phát hiện bản cập nhật mới: ${info.tagName}!`);
+          }
+        }
+      } catch (err) {
+        console.warn("Update check error:", err);
+      }
+    };
+
+    // Check 2 seconds after mount, and every 15 minutes
+    const initialTimer = window.setTimeout(checkUpdates, 2000);
+    const intervalTimer = window.setInterval(checkUpdates, 15 * 60 * 1000);
+
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(intervalTimer);
+    };
+  }, []);
+
   const refreshEngineStatus = async () => {
     const status = await invoke<EngineStatus>("get_engine_status");
     setEngineStatus(status);
@@ -172,6 +214,7 @@ export default function App() {
 
                 if (isFinished && t.status !== "completed") {
                   toast.success(`Đã tải xong: ${t.title}`);
+                  playSuccessChime();
                   confetti({
                     particleCount: 80,
                     spread: 70,
@@ -228,6 +271,38 @@ export default function App() {
     };
   }, []);
 
+  // Clipboard sniffer on window focus
+  useEffect(() => {
+    const checkClipboard = async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        const clean = text?.trim();
+        if (
+          clean &&
+          clean.startsWith("http") &&
+          clean !== lastCheckedClipboard.current &&
+          clean !== url &&
+          (clean.includes("youtube.com") ||
+            clean.includes("youtu.be") ||
+            clean.includes("tiktok.com") ||
+            clean.includes("facebook.com") ||
+            clean.includes("fb.watch") ||
+            clean.includes("instagram.com") ||
+            clean.includes("twitter.com") ||
+            clean.includes("x.com") ||
+            clean.includes("soundcloud.com") ||
+            clean.includes("bilibili.com"))
+        ) {
+          lastCheckedClipboard.current = clean;
+          setDetectedClipboardUrl(clean);
+        }
+      } catch {}
+    };
+
+    window.addEventListener("focus", checkClipboard);
+    return () => window.removeEventListener("focus", checkClipboard);
+  }, [url]);
+
   // Analyze media URL
   const handleAnalyze = async (urlToAnalyze?: string) => {
     const targetUrl = (urlToAnalyze || url).trim();
@@ -247,6 +322,47 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Quick 1-Click Instant Download without waiting for metadata pre-fetch
+  const handleQuickDownload = async (
+    targetUrl: string,
+    type: "video" | "audio",
+    qualityOrFormat: string,
+    audioQuality?: string
+  ) => {
+    const cleanUrl = targetUrl.trim();
+    if (!cleanUrl) return;
+
+    let displayTitle = cleanUrl;
+    try {
+      const parsed = new URL(cleanUrl);
+      displayTitle = `${parsed.hostname}${parsed.pathname}`.slice(0, 45);
+    } catch {}
+
+    const req: DownloadRequest = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      url: cleanUrl,
+      title:
+        type === "audio"
+          ? `[Audio ${qualityOrFormat.toUpperCase()}] ${displayTitle}`
+          : `[Video ${qualityOrFormat}] ${displayTitle}`,
+      download_type: type,
+      quality: type === "video" ? qualityOrFormat : "best",
+      video_container: type === "video" ? "mp4" : undefined,
+      audio_format: type === "audio" ? qualityOrFormat : undefined,
+      audio_quality: type === "audio" ? audioQuality || "320K" : undefined,
+      audio_normalize: type === "audio",
+      output_dir: settings.defaultDownloadDir,
+      embed_subtitles: settings.embedSubtitles,
+      embed_thumbnail: true,
+      embed_metadata: true,
+      sponsorblock: settings.sponsorBlock,
+      cookies_browser: settings.cookiesBrowser,
+    };
+
+    setDetectedClipboardUrl(null);
+    await handleStartDownload(req);
   };
 
   // Start Download
@@ -381,6 +497,14 @@ export default function App() {
       await invoke("open_file", { path });
     } catch (e) {
       toast.error("Không thể mở file");
+    }
+  };
+
+  const handleOpenUrl = async (targetUrl: string) => {
+    try {
+      await invoke("open_url", { url: targetUrl });
+    } catch {
+      window.open(targetUrl, "_blank");
     }
   };
 
@@ -584,6 +708,72 @@ export default function App() {
                 </button>
               )}
 
+              {/* Floating Clipboard Sniffer Banner */}
+              <AnimatePresence>
+                {detectedClipboardUrl && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                    transition={{ duration: 0.2 }}
+                    className="p-3.5 rounded-2xl bg-gradient-to-r from-indigo-950/80 via-purple-950/80 to-slate-900/90 border border-indigo-500/40 shadow-xl shadow-indigo-950/40 backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 w-full sm:w-auto">
+                      <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-300 shrink-0">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
+                          <span>Phát hiện liên kết trong Clipboard</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/30 text-indigo-200 border border-indigo-500/40 font-semibold">Tự động bắt link</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 font-mono truncate max-w-sm sm:max-w-md">
+                          {detectedClipboardUrl}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                      <button
+                        onClick={() => {
+                          handleQuickDownload(detectedClipboardUrl, "video", "1080p");
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+                        title="Tải ngay Video MP4 1080p"
+                      >
+                        <span>🎬 Video 1080p</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleQuickDownload(detectedClipboardUrl, "audio", "mp3", "320K");
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+                        title="Tách ngay nhạc MP3 320k"
+                      >
+                        <span>🎵 MP3 320k</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setUrl(detectedClipboardUrl);
+                          handleAnalyze(detectedClipboardUrl);
+                          setDetectedClipboardUrl(null);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold transition-all cursor-pointer"
+                      >
+                        🔍 Phân tích
+                      </button>
+                      <button
+                        onClick={() => setDetectedClipboardUrl(null)}
+                        className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+                        title="Bỏ qua"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Quick destination selector: visible even before a URL is analyzed. */}
               <div className="flex items-center justify-between gap-3 px-3.5 py-3 rounded-2xl glass-panel">
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -608,6 +798,7 @@ export default function App() {
                 url={url}
                 setUrl={setUrl}
                 onAnalyze={handleAnalyze}
+                onQuickDownload={handleQuickDownload}
                 isLoading={isLoading}
               />
 
@@ -698,6 +889,13 @@ export default function App() {
         onInstallFfmpeg={handleInstallFfmpeg}
         isUpdating={isUpdatingEngine}
         isInstallingFfmpeg={isInstallingFfmpeg}
+      />
+
+      <UpdateNotificationModal
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+        releaseInfo={githubRelease}
+        onOpenUrl={handleOpenUrl}
       />
     </div>
   );

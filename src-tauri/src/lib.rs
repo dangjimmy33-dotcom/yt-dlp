@@ -39,6 +39,7 @@ pub fn run() {
             get_default_download_dir,
             open_in_folder,
             open_file,
+            open_url,
             minimize_window,
             toggle_maximize_window,
             close_window,

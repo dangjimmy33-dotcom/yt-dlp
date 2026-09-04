@@ -14,6 +14,10 @@ import {
   ShieldCheck,
   FileText,
   Clock,
+  Layers,
+  Cpu,
+  Volume2,
+  Sliders,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -33,12 +37,19 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
   outputDir,
 }) => {
   const [activeTab, setActiveTab] = useState<"video" | "audio" | "trim" | "advanced">("video");
+  
+  // Video settings
   const [selectedQuality, setSelectedQuality] = useState<string>("1080p");
+  const [selectedContainer, setSelectedContainer] = useState<string>("mp4");
+  const [selectedCodec, setSelectedCodec] = useState<string>("auto");
+
+  // Audio settings
   const [selectedAudioFormat, setSelectedAudioFormat] = useState<string>("mp3");
   const [selectedAudioQuality, setSelectedAudioQuality] = useState<string>("320K");
-  const [customFilename, setCustomFilename] = useState<string>("");
+  const [audioNormalize, setAudioNormalize] = useState<boolean>(true);
 
-  // Options toggles
+  // Filename & Advanced
+  const [customFilename, setCustomFilename] = useState<string>("");
   const [embedSubs, setEmbedSubs] = useState<boolean>(settings.embedSubtitles);
   const [embedThumb, setEmbedThumb] = useState<boolean>(settings.embedThumbnail);
   const [embedMeta, setEmbedMeta] = useState<boolean>(settings.embedMetadata);
@@ -58,30 +69,50 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
     { id: "480p", label: "480p SD", note: "854x480 • Tiết kiệm dữ liệu", badge: "SD" },
   ];
 
+  const videoContainers = [
+    { id: "mp4", label: "MP4", desc: "Tương thích cao nhất, phát mọi thiết bị" },
+    { id: "mkv", label: "MKV", desc: "Giữ trọn phụ đề rời & đa luồng audio" },
+    { id: "webm", label: "WebM", desc: "Tối ưu dung lượng nhẹ cho Web" },
+    { id: "mov", label: "MOV", desc: "Chuẩn Apple QuickTime" },
+  ];
+
+  const videoCodecs = [
+    { id: "auto", label: "Tự động (Khuyên dùng)" },
+    { id: "h264", label: "H.264 / AVC (Tương thích 100%)" },
+    { id: "hevc", label: "HEVC / H.265 (Tiết kiệm dung lượng)" },
+    { id: "av1", label: "AV1 (Siêu nét thế hệ mới)" },
+    { id: "vp9", label: "VP9 (Chuẩn Google/YouTube)" },
+  ];
+
   const audioFormats = [
-    { id: "mp3", label: "MP3 Audio", note: "Tương thích mọi thiết bị", icon: "🎵" },
-    { id: "flac", label: "FLAC Lossless", note: "Chất lượng phòng thu nguyên bản", icon: "💎" },
-    { id: "m4a", label: "M4A (AAC)", note: "Tối ưu cho Apple & iOS", icon: "🍏" },
-    { id: "wav", label: "WAV Uncompressed", note: "Âm thanh không nén", icon: "🎼" },
-    { id: "opus", label: "OPUS Codec", note: "Chuẩn codec hiện đại nhất", icon: "⚡" },
+    { id: "mp3", label: "MP3 Audio", note: "Tương thích 100% loa, ô tô, điện thoại", icon: "🎵" },
+    { id: "flac", label: "FLAC Lossless", note: "Chất lượng phòng thu Audiophile nguyên bản", icon: "💎" },
+    { id: "m4a", label: "M4A (AAC)", note: "Tối ưu cho Apple iPhone, iPad, Mac", icon: "🍏" },
+    { id: "wav", label: "WAV Uncompressed", note: "Âm thanh gốc PCM không nén", icon: "🎼" },
+    { id: "opus", label: "OPUS Codec", note: "Codec hiện đại với độ trung thực cao", icon: "⚡" },
+    { id: "ogg", label: "OGG Vorbis", note: "Mã nguồn mở chất lượng cao", icon: "🎛️" },
   ];
 
   const audioBitrates = [
-    { id: "320K", label: "320 kbps (Cực cao)" },
+    { id: "320K", label: "320 kbps (Cực cao • Studio Master)" },
     { id: "256K", label: "256 kbps (Rất cao)" },
-    { id: "192K", label: "192 kbps (Chuẩn)" },
+    { id: "192K", label: "192 kbps (Chuẩn CD)" },
     { id: "128K", label: "128 kbps (Cơ bản)" },
   ];
 
   const handleDownload = () => {
+    const isAudio = activeTab === "audio";
     const req: DownloadRequest = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       url: media.url,
       title: media.title,
-      download_type: activeTab === "audio" ? "audio" : "video",
+      download_type: isAudio ? "audio" : "video",
       quality: selectedQuality,
+      video_container: isAudio ? undefined : selectedContainer,
+      video_codec: isAudio || selectedCodec === "auto" ? undefined : selectedCodec,
       audio_format: selectedAudioFormat,
       audio_quality: selectedAudioQuality,
+      audio_normalize: isAudio ? audioNormalize : undefined,
       output_dir: outputDir || settings.defaultDownloadDir,
       custom_filename: customFilename.trim() || undefined,
       embed_subtitles: embedSubs,
@@ -108,7 +139,7 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
       <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-950/60 border border-white/[0.06] overflow-x-auto scrollbar-none">
         {[
           { id: "video", label: "Tải Video", icon: Video },
-          { id: "audio", label: "Tách Âm Thanh", icon: Music },
+          { id: "audio", label: "Studio Âm Thanh", icon: Music },
           { id: "trim", label: "Cắt Phân Đoạn", icon: Scissors },
           { id: "advanced", label: "Tùy Chọn Thêm", icon: Settings2 },
         ].map((tab) => {
@@ -149,39 +180,94 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5"
+            className="space-y-4"
           >
-            {videoQualities.map((q) => {
-              const isSelected = selectedQuality === q.id;
-              return (
-                <div
-                  key={q.id}
-                  onClick={() => setSelectedQuality(q.id)}
-                  className={`relative p-3 rounded-xl cursor-pointer transition-all flex items-center justify-between ${
-                    isSelected ? "glass-card-active" : "glass-card"
-                  }`}
-                >
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-100">{q.label}</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
-                        {q.badge}
-                      </span>
+            {/* Resolution Grid */}
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Chọn độ phân giải:
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {videoQualities.map((q) => {
+                  const isSelected = selectedQuality === q.id;
+                  return (
+                    <div
+                      key={q.id}
+                      onClick={() => setSelectedQuality(q.id)}
+                      className={`relative p-3 rounded-xl cursor-pointer transition-all flex items-center justify-between ${
+                        isSelected ? "glass-card-active" : "glass-card"
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-100">{q.label}</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
+                            {q.badge}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400">{q.note}</p>
+                      </div>
+                      <div
+                        className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${
+                          isSelected
+                            ? "bg-indigo-500 text-white shadow-md shadow-indigo-500/40"
+                            : "border border-white/20"
+                        }`}
+                      >
+                        {isSelected && <Check className="w-3 h-3" />}
+                      </div>
                     </div>
-                    <p className="text-[11px] text-slate-400">{q.note}</p>
-                  </div>
-                  <div
-                    className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${
-                      isSelected
-                        ? "bg-indigo-500 text-white shadow-md shadow-indigo-500/40"
-                        : "border border-white/20"
-                    }`}
-                  >
-                    {isSelected && <Check className="w-3 h-3" />}
-                  </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Container & Codec Matrix */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+              {/* Container format */}
+              <div className="p-3.5 rounded-xl bg-slate-950/40 border border-white/[0.06] space-y-2.5">
+                <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-purple-400" /> Định dạng đóng gói (Container):
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {videoContainers.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setSelectedContainer(c.id)}
+                      className={`p-2 rounded-lg text-left transition-all ${
+                        selectedContainer === c.id
+                          ? "bg-indigo-500/20 border border-indigo-500/50 text-indigo-200"
+                          : "bg-white/[0.03] border border-white/[0.06] text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      <span className="text-xs font-bold block">{c.label}</span>
+                      <span className="text-[10px] opacity-75 block truncate">{c.desc}</span>
+                    </button>
+                  ))}
                 </div>
-              );
-            })}
+              </div>
+
+              {/* Codec */}
+              <div className="p-3.5 rounded-xl bg-slate-950/40 border border-white/[0.06] space-y-2.5">
+                <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <Cpu className="w-3.5 h-3.5 text-pink-400" /> Bộ mã hóa video (Codec):
+                </span>
+                <select
+                  value={selectedCodec}
+                  onChange={(e) => setSelectedCodec(e.target.value)}
+                  className="w-full glass-input px-3 py-2 rounded-xl text-xs text-slate-200 focus:outline-none"
+                >
+                  {videoCodecs.map((codec) => (
+                    <option key={codec.id} value={codec.id} className="bg-slate-900 text-slate-200">
+                      {codec.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-400">
+                  H.264 cho độ tương thích cao nhất trên TV/Điện thoại cũ; AV1/HEVC cho độ nét tối đa.
+                </p>
+              </div>
+            </div>
           </motion.div>
         )}
 
@@ -192,50 +278,58 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
-            className="space-y-3"
+            className="space-y-4"
           >
             {/* Format selection */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {audioFormats.map((af) => {
-                const isSelected = selectedAudioFormat === af.id;
-                return (
-                  <div
-                    key={af.id}
-                    onClick={() => setSelectedAudioFormat(af.id)}
-                    className={`p-3 rounded-xl cursor-pointer transition-all flex items-center justify-between ${
-                      isSelected ? "glass-card-active" : "glass-card"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-lg">{af.icon}</span>
-                      <div>
-                        <span className="text-xs font-bold text-slate-100 block">{af.label}</span>
-                        <span className="text-[11px] text-slate-400 block">{af.note}</span>
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-pink-400" /> Chọn định dạng âm thanh:
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {audioFormats.map((af) => {
+                  const isSelected = selectedAudioFormat === af.id;
+                  return (
+                    <div
+                      key={af.id}
+                      onClick={() => setSelectedAudioFormat(af.id)}
+                      className={`p-3 rounded-xl cursor-pointer transition-all flex items-center justify-between ${
+                        isSelected ? "glass-card-active" : "glass-card"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-lg">{af.icon}</span>
+                        <div>
+                          <span className="text-xs font-bold text-slate-100 block">{af.label}</span>
+                          <span className="text-[11px] text-slate-400 block">{af.note}</span>
+                        </div>
                       </div>
+                      {isSelected && (
+                        <div className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center">
+                          <Check className="w-3 h-3" />
+                        </div>
+                      )}
                     </div>
-                    {isSelected && (
-                      <div className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center">
-                        <Check className="w-3 h-3" />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Bitrate selection */}
-            {selectedAudioFormat === "mp3" && (
-              <div className="flex items-center gap-2 pt-1">
-                <span className="text-xs text-slate-400 font-medium">Chất lượng Bitrate:</span>
-                <div className="flex items-center gap-2">
+            {/* Bitrate & Studio Enhancements */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+              {/* Bitrate selection */}
+              <div className="p-3.5 rounded-xl bg-slate-950/40 border border-white/[0.06] space-y-2.5">
+                <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-indigo-400" /> Chất lượng Bitrate (Độ phân giải âm):
+                </span>
+                <div className="grid grid-cols-2 gap-2">
                   {audioBitrates.map((b) => (
                     <button
                       key={b.id}
                       onClick={() => setSelectedAudioQuality(b.id)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      className={`px-2.5 py-2 rounded-lg text-xs font-semibold text-left transition-all ${
                         selectedAudioQuality === b.id
-                          ? "bg-indigo-500/30 border border-indigo-500/60 text-indigo-300"
-                          : "bg-white/[0.04] border border-white/[0.06] text-slate-400 hover:text-white"
+                          ? "bg-indigo-500/20 border border-indigo-500/60 text-indigo-300"
+                          : "bg-white/[0.03] border border-white/[0.06] text-slate-400 hover:text-white"
                       }`}
                     >
                       {b.label}
@@ -243,7 +337,34 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
                   ))}
                 </div>
               </div>
-            )}
+
+              {/* Loudness normalization & Tagging */}
+              <div className="p-3.5 rounded-xl bg-slate-950/40 border border-white/[0.06] space-y-2.5 flex flex-col justify-between">
+                <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <Volume2 className="w-3.5 h-3.5 text-emerald-400" /> Tinh chỉnh âm thanh phòng thu:
+                </span>
+                
+                <div
+                  onClick={() => setAudioNormalize(!audioNormalize)}
+                  className={`p-2.5 rounded-lg cursor-pointer flex items-center justify-between transition-all ${
+                    audioNormalize ? "bg-emerald-500/15 border border-emerald-500/40" : "bg-white/[0.03] border border-white/[0.06]"
+                  }`}
+                >
+                  <div>
+                    <span className="text-xs font-bold text-slate-200 block">Chuẩn hóa âm lượng (EBU R128 Loudnorm)</span>
+                    <span className="text-[10px] text-slate-400 block">Cân bằng âm lượng tự động, tránh bài to bài nhỏ</span>
+                  </div>
+                  <div className={`w-4 h-4 rounded ${audioNormalize ? "bg-emerald-500 text-white" : "border border-white/20"} flex items-center justify-center shrink-0`}>
+                    {audioNormalize && <Check className="w-3 h-3" />}
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-400 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-pink-400" />
+                  <span>Tự động nhúng Cover Art và thẻ ID3 (Ca sĩ, Album) vào file nhạc.</span>
+                </div>
+              </div>
+            </div>
           </motion.div>
         )}
 
@@ -399,3 +520,4 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
     </motion.div>
   );
 };
+

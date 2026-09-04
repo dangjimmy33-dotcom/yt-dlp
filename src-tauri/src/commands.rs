@@ -182,6 +182,11 @@ pub fn open_file(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    open_file(url)
+}
+
+#[tauri::command]
 pub fn minimize_window(window: tauri::Window) {
     let _ = window.minimize();
 }

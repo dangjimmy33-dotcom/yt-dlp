@@ -53,10 +53,13 @@ export interface DownloadRequest {
   url: string;
   title: string;
   download_type: 'video' | 'audio' | 'custom';
-  quality: string; // 'best' | '2160p' | '1440p' | '1080p' | '720p' | '480p' | '360p'
+  quality: string; // 'best' | '4320p' | '2160p' | '1440p' | '1080p' | '720p' | '480p' | '360p'
   format_id?: string;
-  audio_format?: string; // 'mp3' | 'm4a' | 'flac' | 'wav' | 'opus'
-  audio_quality?: string; // '320K' | '256K' | '192K' | '128K'
+  video_container?: string; // 'mp4' | 'mkv' | 'webm' | 'mov'
+  video_codec?: string; // 'h264' | 'hevc' | 'av1' | 'vp9'
+  audio_format?: string; // 'mp3' | 'm4a' | 'flac' | 'wav' | 'opus' | 'ogg'
+  audio_quality?: string; // '320K' | '256K' | '192K' | '128K' | '0'
+  audio_normalize?: boolean;
   output_dir: string;
   custom_filename?: string;
   embed_subtitles: boolean;

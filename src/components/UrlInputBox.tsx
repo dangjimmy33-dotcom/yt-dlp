@@ -1,11 +1,12 @@
 import React, { useState } from "react";
-import { Search, ClipboardPaste, ArrowRight, X, Loader2, Sparkles } from "lucide-react";
-import { motion } from "framer-motion";
+import { Search, ClipboardPaste, ArrowRight, X, Loader2, Sparkles, Zap, Music, Video, Disc } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface UrlInputBoxProps {
   url: string;
   setUrl: (url: string) => void;
   onAnalyze: (urlToAnalyze?: string) => void;
+  onQuickDownload?: (url: string, type: 'video' | 'audio', qualityOrFormat: string, audioQuality?: string) => void;
   isLoading: boolean;
 }
 
@@ -13,6 +14,7 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
   url,
   setUrl,
   onAnalyze,
+  onQuickDownload,
   isLoading,
 }) => {
   const [isFocused, setIsFocused] = useState(false);
@@ -21,9 +23,10 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
     try {
       const text = await navigator.clipboard.readText();
       if (text) {
-        setUrl(text.trim());
-        if (text.startsWith("http")) {
-          onAnalyze(text.trim());
+        const clean = text.trim();
+        setUrl(clean);
+        if (clean.startsWith("http")) {
+          onAnalyze(clean);
         }
       }
     } catch {
@@ -46,6 +49,8 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
     { name: "SoundCloud", icon: "🎧", color: "from-orange-500/20 to-amber-500/20 text-orange-300 border-orange-500/30" },
     { name: "Bilibili", icon: "📺", color: "from-cyan-500/20 to-blue-500/20 text-cyan-300 border-cyan-500/30" },
   ];
+
+  const hasValidUrl = url.trim().startsWith("http");
 
   return (
     <div className="w-full space-y-3">
@@ -117,6 +122,52 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
         </button>
       </motion.div>
 
+      {/* 1-Click Quick Actions Toolbar when URL is present */}
+      <AnimatePresence>
+        {hasValidUrl && onQuickDownload && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, y: -6 }}
+            animate={{ opacity: 1, height: "auto", y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -6 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-gradient-to-r from-indigo-950/40 via-purple-950/40 to-slate-900/60 border border-indigo-500/20 backdrop-blur-md">
+              <span className="text-[11px] font-bold text-indigo-300 flex items-center gap-1 pl-1 mr-1">
+                <Zap className="w-3.5 h-3.5 text-amber-400" /> Tải Nhanh 1-Click:
+              </span>
+
+              <button
+                onClick={() => onQuickDownload(url.trim(), 'video', '1080p')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-xs font-semibold text-indigo-200 hover:text-white transition-all shadow-sm cursor-pointer"
+                title="Tải ngay Video 1080p MP4 không cần chờ phân tích"
+              >
+                <Video className="w-3.5 h-3.5 text-indigo-400" />
+                <span>🎬 Video MP4 1080p</span>
+              </button>
+
+              <button
+                onClick={() => onQuickDownload(url.trim(), 'audio', 'mp3', '320K')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-pink-600/30 hover:bg-pink-600/50 border border-pink-500/40 text-xs font-semibold text-pink-200 hover:text-white transition-all shadow-sm cursor-pointer"
+                title="Tách ngay nhạc MP3 320kbps chất lượng cao"
+              >
+                <Music className="w-3.5 h-3.5 text-pink-400" />
+                <span>🎵 Nhạc MP3 320k</span>
+              </button>
+
+              <button
+                onClick={() => onQuickDownload(url.trim(), 'audio', 'flac')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-xs font-semibold text-emerald-200 hover:text-white transition-all shadow-sm cursor-pointer"
+                title="Tách ngay âm thanh Lossless FLAC nguyên bản phòng thu"
+              >
+                <Disc className="w-3.5 h-3.5 text-emerald-400" />
+                <span>💎 Lossless FLAC</span>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Platform Badges */}
       <motion.div
         initial={{ opacity: 0 }}
@@ -143,3 +194,4 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
     </div>
   );
 };
+

@@ -1,5 +1,6 @@
 import React from "react";
 import { AppSettings } from "../types";
+import { playNotificationBell } from "../utils/sound";
 import {
   X,
   Folder,
@@ -201,6 +202,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <span className="text-xs text-slate-200 font-medium">Thông báo khi tải xong</span>
               </label>
+            </div>
+          </div>
+
+          {/* GitHub Updates & Sound Notifications Section */}
+          <div className="space-y-2.5 pt-2 border-t border-white/[0.06]">
+            <span className="text-xs font-bold text-slate-300 block flex items-center gap-1.5">
+              <Bell className="w-3.5 h-3.5 text-amber-400" />
+              <span>Chuông Thông Báo & Cập Nhật GitHub</span>
+            </span>
+
+            <div className="p-3 rounded-2xl bg-slate-950/40 border border-white/[0.06] space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <div>
+                  <span className="font-semibold text-slate-200 block">Âm thanh chuông báo (Bell Chime)</span>
+                  <span className="text-[11px] text-slate-400 block">Tự động rung chuông khi có bản phát hành mới trên GitHub</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => playNotificationBell()}
+                  className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition-all cursor-pointer"
+                >
+                  🔔 Rung thử chuông
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-white/[0.04] text-xs">
+                <div className="text-[11px] text-slate-400">
+                  <span>Phiên bản hiện tại: </span>
+                  <span className="font-bold text-slate-200">v1.0.0</span>
+                </div>
+                <a
+                  href="https://github.com/dangjimmy33-dotcom/yt-dlp/releases"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
+                >
+                  Xem GitHub Releases →
+                </a>
+              </div>
             </div>
           </div>
         </div>
