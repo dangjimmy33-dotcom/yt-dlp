@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Listener, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::oneshot;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -21,7 +21,7 @@ pub const SNIFFER_INJECTION_SCRIPT: &str = r#"
 
   function isMediaStream(url) {
     if (!url || typeof url !== 'string') return false;
-    if (url.startsWith('blob:') || url.startsWith('data:')) return false;
+    if (url.startsWith('blob:') || url.startsWith('data:') || url.startsWith('flowdl:')) return false;
     const clean = url.toLowerCase().split('?')[0];
     return clean.endsWith('.m3u8') ||
            clean.endsWith('.mp4') ||
@@ -38,12 +38,28 @@ pub const SNIFFER_INJECTION_SCRIPT: &str = r#"
            url.includes('stream.googleapiscdn.com');
   }
 
+  function showFloatingBadge(url, type) {
+    try {
+      if (document.getElementById('__flowdl_badge__')) return;
+      const badge = document.createElement('div');
+      badge.id = '__flowdl_badge__';
+      badge.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483647;background:rgba(15,23,42,0.95);backdrop-filter:blur(16px);border:1.5px solid #6366f1;border-radius:16px;padding:14px 20px;color:#fff;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 20px 40px rgba(0,0,0,0.8),0 0 25px rgba(99,102,241,0.5);display:flex;align-items:center;gap:14px;cursor:pointer;';
+      badge.innerHTML = `
+        <div style="width:12px;height:12px;border-radius:50%;background:#10b981;box-shadow:0 0 12px #10b981;flex-shrink:0;"></div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#e0e7ff;letter-spacing:-0.2px;">ĐÃ BẮT ĐƯỢC LUỒNG VIDEO!</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Chuyển về cửa sổ chính Studio để tải ngay</div>
+        </div>
+      `;
+      document.body.appendChild(badge);
+    } catch(e) {}
+  }
+
   function emitStream(url, type) {
     if (!url || typeof url !== 'string') return;
-    if (url.startsWith('blob:') || url.startsWith('data:')) return;
+    if (url.startsWith('blob:') || url.startsWith('data:') || url.startsWith('flowdl:')) return;
     if (captured.has(url)) return;
 
-    // Filter out common non-video assets
     if (url.includes('.js') || url.includes('.css') || url.includes('.png') || url.includes('.jpg') || url.includes('.svg') || url.includes('.woff')) {
       if (!url.includes('.m3u8') && !url.includes('.mp4')) return;
     }
@@ -51,16 +67,23 @@ pub const SNIFFER_INJECTION_SCRIPT: &str = r#"
     if (isMediaStream(url)) {
       captured.add(url);
       console.log('[FLOWDL Sniffer Intercepted]', type, url);
+
+      // Signal Rust backend via custom flowdl scheme navigation
       try {
-        if (window.__TAURI__ && window.__TAURI__.event) {
-          window.__TAURI__.event.emit('on-sniffed-stream', {
-            stream_url: url,
-            page_url: window.location.href,
-            page_title: document.title || 'Video Stream',
-            source_type: type
-          });
-        }
+        const payload = encodeURIComponent(JSON.stringify({
+          stream_url: url,
+          page_url: window.location.href,
+          page_title: document.title || 'Video Stream',
+          source_type: type
+        }));
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = 'flowdl://stream?data=' + payload;
+        document.body.appendChild(iframe);
+        setTimeout(() => iframe.remove(), 1000);
       } catch(e) {}
+
+      showFloatingBadge(url, type);
     }
   }
 
@@ -162,18 +185,8 @@ pub async fn sniff_url_stream(
     let (tx, rx) = oneshot::channel::<SniffedStreamPayload>();
     let tx_arc = Arc::new(tokio::sync::Mutex::new(Some(tx)));
 
-    let tx_for_event = tx_arc.clone();
-    let handler_id = app.listen("on-sniffed-stream", move |event| {
-        if let Ok(payload) = serde_json::from_str::<SniffedStreamPayload>(event.payload()) {
-            let tx_clone = tx_for_event.clone();
-            tokio::spawn(async move {
-                let mut lock = tx_clone.lock().await;
-                if let Some(sender) = lock.take() {
-                    let _ = sender.send(payload);
-                }
-            });
-        }
-    });
+    let tx_for_nav = tx_arc.clone();
+    let app_handle_clone = app.clone();
 
     let sniffer_window = WebviewWindowBuilder::new(
         &app,
@@ -184,12 +197,31 @@ pub async fn sniff_url_stream(
     .inner_size(800.0, 600.0)
     .visible(false)
     .initialization_script(SNIFFER_INJECTION_SCRIPT)
+    .on_navigation(move |url| {
+        if url.scheme() == "flowdl" {
+            for (k, v) in url.query_pairs() {
+                if k == "data" {
+                    if let Ok(payload) = serde_json::from_str::<SniffedStreamPayload>(&v) {
+                        let _ = app_handle_clone.emit("on-sniffed-stream", payload.clone());
+                        let tx_inner = tx_for_nav.clone();
+                        tokio::spawn(async move {
+                            let mut lock = tx_inner.lock().await;
+                            if let Some(sender) = lock.take() {
+                                let _ = sender.send(payload);
+                            }
+                        });
+                    }
+                }
+            }
+            return false;
+        }
+        true
+    })
     .build();
 
     let win = match sniffer_window {
         Ok(w) => w,
         Err(e) => {
-            app.unlisten(handler_id);
             return Err(format!("Không thể tạo trình phân tích ngầm: {e}"));
         }
     };
@@ -206,8 +238,36 @@ pub async fn sniff_url_stream(
         }
     };
 
-    app.unlisten(handler_id);
     let _ = win.close();
-
     result
+}
+
+pub fn create_sniffer_browser_window(app: &AppHandle, target_url: url::Url) -> Result<tauri::WebviewWindow, String> {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let label = format!("browser_{now_ms}");
+    let app_handle_clone = app.clone();
+
+    WebviewWindowBuilder::new(app, &label, WebviewUrl::External(target_url))
+        .title("Trình duyệt bắt luồng Video - YT-DLP Studio")
+        .inner_size(1180.0, 780.0)
+        .center()
+        .initialization_script(SNIFFER_INJECTION_SCRIPT)
+        .on_navigation(move |url| {
+            if url.scheme() == "flowdl" {
+                for (k, v) in url.query_pairs() {
+                    if k == "data" {
+                        if let Ok(payload) = serde_json::from_str::<SniffedStreamPayload>(&v) {
+                            let _ = app_handle_clone.emit("on-sniffed-stream", payload);
+                        }
+                    }
+                }
+                return false;
+            }
+            true
+        })
+        .build()
+        .map_err(|e| format!("Không thể mở trình duyệt bắt luồng: {e}"))
 }

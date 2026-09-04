@@ -78,26 +78,11 @@ pub async fn fetch_media_info(
 
 #[tauri::command]
 pub async fn open_sniffer_browser(app: AppHandle, url: Option<String>) -> Result<(), String> {
-    use tauri::{WebviewUrl, WebviewWindowBuilder};
-
-    let target_url = url.unwrap_or_else(|| "https://google.com".to_string());
+    let target_url = url.unwrap_or_else(|| "https://animevietsub.li/phim/bang-dream-yumemita-a6029/xem-phim.html".to_string());
     let parsed = url::Url::parse(&target_url)
         .map_err(|e| format!("URL không hợp lệ: {e}"))?;
 
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let label = format!("browser_{now_ms}");
-
-    let _win = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed))
-        .title("Trình duyệt bắt luồng Video - YT-DLP Studio")
-        .inner_size(1180.0, 780.0)
-        .center()
-        .initialization_script(crate::sniffer::SNIFFER_INJECTION_SCRIPT)
-        .build()
-        .map_err(|e| format!("Không thể mở trình duyệt bắt luồng: {e}"))?;
-
+    crate::sniffer::create_sniffer_browser_window(&app, parsed)?;
     Ok(())
 }
 
