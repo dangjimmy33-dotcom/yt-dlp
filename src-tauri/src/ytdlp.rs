@@ -646,14 +646,16 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
                     thumbnail = format!("https:{}", thumbnail);
                 }
 
-                let is_entry_playlist = full_url.contains("/playlist?list=")
-                    || entry.get("playlist_count").is_some()
-                    || entry.get("_type").and_then(|v| v.as_str()) == Some("playlist");
-
                 let is_entry_channel = full_url.contains("/channel/")
                     || full_url.contains("/@")
                     || entry.get("_type").and_then(|v| v.as_str()) == Some("channel")
                     || entry.get("ie_key").and_then(|v| v.as_str()) == Some("YoutubeTab");
+
+                let is_entry_playlist = !is_entry_channel && (
+                    full_url.contains("/playlist?list=")
+                    || (entry.get("playlist_count").is_some() && !full_url.contains("/@"))
+                    || (entry.get("_type").and_then(|v| v.as_str()) == Some("playlist") && !full_url.contains("/@"))
+                );
 
                 let subscriber_count = entry.get("channel_follower_count")
                     .and_then(|v| v.as_u64())
@@ -681,14 +683,18 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
                     full_url
                 };
 
-                let playlist_count = entry.get("playlist_count")
-                    .and_then(|v| v.as_u64())
-                    .map(|c| c as usize);
+                let playlist_count = if is_entry_playlist {
+                    entry.get("playlist_count")
+                        .and_then(|v| v.as_u64())
+                        .map(|c| c as usize)
+                } else {
+                    None
+                };
 
-                let entry_type = if is_entry_playlist {
-                    Some("playlist".to_string())
-                } else if is_entry_channel {
+                let entry_type = if is_entry_channel {
                     Some("channel".to_string())
+                } else if is_entry_playlist {
+                    Some("playlist".to_string())
                 } else {
                     Some("video".to_string())
                 };
@@ -747,6 +753,146 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
     parse_single_video_json(&json, url)
 }
 
+fn parse_and_emit_progress_line(line: &str, current_id: &str, app_handle: &AppHandle) -> bool {
+    let trimmed = line.trim();
+    if trimmed.starts_with("FLOWDL_PROGRESS|") {
+        let parts: Vec<&str> = trimmed.split('|').collect();
+        if parts.len() >= 8 {
+            let downloaded: Option<u64> = parts[1].trim().parse().ok();
+            let total: Option<u64> = parts[2].trim().parse().ok();
+            let estimate: Option<u64> = parts[3].trim().parse().ok();
+            let percent_raw = parts[4].trim().replace('%', "");
+            let speed = parts[5].trim();
+            let eta = parts[6].trim();
+            let status_raw = parts[7].trim();
+
+            let mut percent = 0.0;
+            let mut total_size_display = String::new();
+
+            if let Some(t) = total.filter(|&v| v > 0) {
+                let d = downloaded.unwrap_or(0);
+                percent = (d as f64 / t as f64) * 100.0;
+                total_size_display = format!("{:.1} MB / {:.1} MB", d as f64 / 1_048_576.0, t as f64 / 1_048_576.0);
+            } else if let Some(e) = estimate.filter(|&v| v > 0) {
+                let d = downloaded.unwrap_or(0);
+                percent = (d as f64 / e as f64) * 100.0;
+                total_size_display = format!("{:.1} MB / ~{:.1} MB", d as f64 / 1_048_576.0, e as f64 / 1_048_576.0);
+            } else if let Ok(p) = percent_raw.parse::<f64>() {
+                if p > 0.0 {
+                    percent = p;
+                }
+                if let Some(d) = downloaded {
+                    total_size_display = format!("{:.1} MB đã tải", d as f64 / 1_048_576.0);
+                }
+            }
+
+            if percent == 0.0 {
+                if let Some(d) = downloaded {
+                    let d_mb = d as f64 / 1_048_576.0;
+                    if d_mb > 0.0 {
+                        percent = (d_mb / (d_mb + 12.0) * 85.0).min(90.0);
+                        if total_size_display.is_empty() {
+                            total_size_display = format!("{:.1} MB đã tải", d_mb);
+                        }
+                    }
+                }
+            }
+
+            let final_speed = if speed.is_empty() || speed == "NA" { "0 B/s".to_string() } else { speed.to_string() };
+            let final_eta = if eta.is_empty() || eta == "NA" { "--:--".to_string() } else { eta.to_string() };
+            let final_size = if total_size_display.is_empty() { "Đang tải...".to_string() } else { total_size_display };
+            let final_status = if status_raw == "finished" || percent >= 100.0 {
+                "merging".to_string()
+            } else {
+                "downloading".to_string()
+            };
+
+            let _ = app_handle.emit(
+                "download-progress",
+                DownloadProgressEvent {
+                    task_id: current_id.to_string(),
+                    percent: percent.clamp(0.0, 99.9),
+                    speed: final_speed,
+                    eta: final_eta,
+                    total_size: final_size,
+                    status: final_status,
+                    error_message: None,
+                    output_path: None,
+                },
+            );
+            return true;
+        }
+    }
+
+    if trimmed.starts_with("[download]") {
+        static RE_FULL: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let re_full = RE_FULL.get_or_init(|| {
+            regex::Regex::new(r#"\[download\]\s+([\d\.]+)%\s+of\s+~?([\d\.]+\w+)\s+at\s+([\d\.]+\w+/s)\s+ETA\s+(\S+)"#).unwrap()
+        });
+
+        if let Some(caps) = re_full.captures(trimmed) {
+            let percent = caps.get(1).and_then(|m| m.as_str().parse::<f64>().ok()).unwrap_or(0.0);
+            let total_size = caps.get(2).map(|m| m.as_str().to_string()).unwrap_or_else(|| "Unknown".to_string());
+            let speed = caps.get(3).map(|m| m.as_str().to_string()).unwrap_or_else(|| "0 B/s".to_string());
+            let eta = caps.get(4).map(|m| m.as_str().to_string()).unwrap_or_else(|| "--:--".to_string());
+
+            let _ = app_handle.emit(
+                "download-progress",
+                DownloadProgressEvent {
+                    task_id: current_id.to_string(),
+                    percent: percent.clamp(0.0, 99.9),
+                    speed,
+                    eta,
+                    total_size,
+                    status: if percent >= 100.0 { "merging".to_string() } else { "downloading".to_string() },
+                    error_message: None,
+                    output_path: None,
+                },
+            );
+            return true;
+        }
+
+        static RE_STREAM: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let re_stream = RE_STREAM.get_or_init(|| {
+            regex::Regex::new(r#"\[download\]\s+([\d\.]+\w+)\s+at\s+([\d\.]+\w+/s)"#).unwrap()
+        });
+
+        if let Some(caps) = re_stream.captures(trimmed) {
+            let downloaded_str = caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
+            let speed = caps.get(2).map(|m| m.as_str().to_string()).unwrap_or_else(|| "0 B/s".to_string());
+
+            let mut stream_percent = 5.0;
+            if let Some(first_num) = downloaded_str.split(|c: char| !c.is_numeric() && c != '.').next().and_then(|s| s.parse::<f64>().ok()) {
+                let mb = if downloaded_str.contains("GiB") || downloaded_str.contains("GB") {
+                    first_num * 1024.0
+                } else if downloaded_str.contains("KiB") || downloaded_str.contains("KB") {
+                    first_num / 1024.0
+                } else {
+                    first_num
+                };
+                stream_percent = (mb / (mb + 12.0) * 85.0).clamp(5.0, 90.0);
+            }
+
+            let _ = app_handle.emit(
+                "download-progress",
+                DownloadProgressEvent {
+                    task_id: current_id.to_string(),
+                    percent: stream_percent,
+                    speed,
+                    eta: "--:--".to_string(),
+                    total_size: format!("{} đã tải", downloaded_str),
+                    status: "downloading".to_string(),
+                    error_message: None,
+                    output_path: None,
+                },
+            );
+            return true;
+        }
+    }
+
+    false
+}
+
 pub async fn execute_download(
     app: AppHandle,
     req: DownloadRequest,
@@ -795,8 +941,9 @@ pub async fn execute_download(
         .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
 
     cmd.arg("--newline")
+        .arg("--progress")
         .arg("--progress-template")
-        .arg("FLOWDL_PROGRESS|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._total_bytes_estimate_str)s|%(progress.status)s")
+        .arg("FLOWDL_PROGRESS|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress.status)s")
         .arg("--print")
         .arg("after_move:FLOWDL_FILE|%(filepath)s")
         .arg("--ffmpeg-location")
@@ -826,8 +973,14 @@ pub async fn execute_download(
 
     if req.download_type == "audio" {
         cmd.arg("-x");
-        let audio_fmt = req.audio_format.as_deref().unwrap_or("mp3");
-        cmd.arg("--audio-format").arg(audio_fmt);
+        let audio_fmt = req.audio_format.as_deref().unwrap_or("mp3").to_lowercase();
+        if audio_fmt == "best" || audio_fmt == "original" {
+            cmd.arg("--audio-format").arg("best");
+        } else if audio_fmt == "ogg" {
+            cmd.arg("--audio-format").arg("vorbis");
+        } else {
+            cmd.arg("--audio-format").arg(&audio_fmt);
+        }
         let audio_q = req.audio_quality.as_deref().unwrap_or("0");
         cmd.arg("--audio-quality").arg(audio_q);
 
@@ -836,8 +989,16 @@ pub async fn execute_download(
         }
     } else {
         if let Some(ref container) = req.video_container {
-            if !container.is_empty() && container != "auto" {
-                cmd.arg("--merge-output-format").arg(container);
+            let c = container.trim().to_lowercase();
+            if !c.is_empty() && c != "auto" && c != "original" {
+                if c == "gif" {
+                    cmd.arg("--recode-video").arg("gif");
+                } else if c == "avi" || c == "flv" || c == "mkv" || c == "mov" || c == "mp4" || c == "webm" {
+                    cmd.arg("--merge-output-format").arg(&c);
+                    cmd.arg("--remux-video").arg(&c);
+                } else {
+                    cmd.arg("--recode-video").arg(&c);
+                }
             }
         }
 
@@ -892,6 +1053,7 @@ pub async fn execute_download(
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
 
+    cmd.env("PYTHONUNBUFFERED", "1");
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
@@ -922,46 +1084,27 @@ pub async fn execute_download(
                 continue;
             }
 
-            if line.starts_with("FLOWDL_PROGRESS|") {
-                let parts: Vec<&str> = line.split('|').collect();
-                if parts.len() >= 6 {
-                    let percent_str = parts[1].trim().replace('%', "");
-                    let percent = percent_str.parse::<f64>().unwrap_or(0.0);
-                    let speed = parts[2].trim().to_string();
-                    let eta = parts[3].trim().to_string();
-                    let total_size = parts[4].trim().to_string();
-
-                    let _ = app_handle.emit(
-                        "download-progress",
-                        DownloadProgressEvent {
-                            task_id: current_id.clone(),
-                            percent,
-                            speed: if speed.is_empty() || speed == "NA" { "0 B/s".to_string() } else { speed },
-                            eta: if eta.is_empty() || eta == "NA" { "--:--".to_string() } else { eta },
-                            total_size: if total_size.is_empty() || total_size == "NA" { "Unknown".to_string() } else { total_size },
-                            status: if percent >= 100.0 { "merging".to_string() } else { "downloading".to_string() },
-                            error_message: None,
-                            output_path: None,
-                        },
-                    );
-                }
-            }
+            parse_and_emit_progress_line(&line, &current_id, &app_handle);
         }
     });
 
     let errors_for_reader = last_errors.clone();
+    let app_handle_err = app.clone();
+    let current_id_err = task_id.clone();
     let stderr_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
-            let line = line.trim().to_string();
-            if line.is_empty() {
+            let line_trimmed = line.trim().to_string();
+            if line_trimmed.is_empty() {
                 continue;
             }
-            let mut errors = errors_for_reader.lock().await;
-            if errors.len() >= 24 {
-                errors.pop_front();
+            if !parse_and_emit_progress_line(&line_trimmed, &current_id_err, &app_handle_err) {
+                let mut errors = errors_for_reader.lock().await;
+                if errors.len() >= 24 {
+                    errors.pop_front();
+                }
+                errors.push_back(line_trimmed);
             }
-            errors.push_back(line);
         }
     });
 
@@ -1019,12 +1162,15 @@ pub async fn execute_download(
 
 fn add_quality_and_codec_format(cmd: &mut Command, quality: &str, codec: Option<&str>) {
     let max_height = match quality {
-        "2160p" => Some(2160),
-        "1440p" => Some(1440),
+        "4320p" | "8k" => Some(4320),
+        "2160p" | "4k" => Some(2160),
+        "1440p" | "2k" => Some(1440),
         "1080p" => Some(1080),
         "720p" => Some(720),
         "480p" => Some(480),
         "360p" => Some(360),
+        "240p" => Some(240),
+        "144p" => Some(144),
         _ => None,
     };
 
@@ -1033,6 +1179,8 @@ fn add_quality_and_codec_format(cmd: &mut Command, quality: &str, codec: Option<
         Some("hevc") | Some("h265") => Some("[vcodec^=hvc1]"),
         Some("vp9") => Some("[vcodec^=vp9]"),
         Some("av1") => Some("[vcodec^=av01]"),
+        Some("vp8") => Some("[vcodec^=vp8]"),
+        Some("prores") => Some("[vcodec^=ap]"),
         _ => None,
     };
 

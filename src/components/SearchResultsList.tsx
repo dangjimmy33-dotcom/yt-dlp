@@ -60,7 +60,6 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
   const [filterText, setFilterText] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'video' | 'playlist' | 'channel'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [isGlobalSettingExpanded, setIsGlobalSettingExpanded] = useState<boolean>(false);
 
   // Pagination state
@@ -71,17 +70,33 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
   const [fromEp, setFromEp] = useState<string>('1');
   const [toEp, setToEp] = useState<string>(String(allEntries.length || 1));
 
+  // Helpers to distinguish channel vs playlist vs video robustly
+  const isChannel = (e: PlaylistEntry) =>
+    e.entry_type === 'channel' || e.url.includes('/channel/') || e.url.includes('/@');
+
+  const isPlaylist = (e: PlaylistEntry) =>
+    !isChannel(e) && (e.is_playlist || e.entry_type === 'playlist' || e.url.includes('/playlist?list='));
+
+  const isVideo = (e: PlaylistEntry) =>
+    !isChannel(e) && !isPlaylist(e);
+
   // Sync state whenever media changes
   useEffect(() => {
     setSelectedIds(new Set(allEntries.map((e) => e.id)));
     setFromEp('1');
     setToEp(String(allEntries.length || 1));
     setCurrentPage(1);
-    setExpandedItemId(null);
-    if (allEntries.length > 0 && allEntries.every((e) => e.entry_type === 'channel')) {
+
+    const chCount = allEntries.filter(isChannel).length;
+    const plCount = allEntries.filter(isPlaylist).length;
+    const viCount = allEntries.filter(isVideo).length;
+
+    if (chCount > 0 && chCount === allEntries.length) {
       setTypeFilter('channel');
-    } else if (allEntries.length > 0 && allEntries.every((e) => e.entry_type === 'playlist' || e.is_playlist)) {
+    } else if (plCount > 0 && plCount === allEntries.length) {
       setTypeFilter('playlist');
+    } else if (viCount > 0 && viCount === allEntries.length) {
+      setTypeFilter('video');
     } else {
       setTypeFilter('all');
     }
@@ -108,6 +123,11 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
   // Per-item override configs
   const [itemConfigs, setItemConfigs] = useState<Record<string, FullFormatConfig>>({});
 
+  // Category counts
+  const channelCount = useMemo(() => allEntries.filter(isChannel).length, [allEntries]);
+  const playlistCount = useMemo(() => allEntries.filter(isPlaylist).length, [allEntries]);
+  const videoCount = useMemo(() => allEntries.filter(isVideo).length, [allEntries]);
+
   // Format seconds to mm:ss or hh:mm:ss
   const formatDuration = (secs?: number): string => {
     if (!secs || isNaN(secs) || secs <= 0) return '';
@@ -133,20 +153,19 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
 
       // Type tab filter
       if (typeFilter === 'video') {
-        const isPl = e.is_playlist || e.entry_type === 'playlist' || e.url.includes('/playlist?list=');
-        const isCh = e.entry_type === 'channel' || e.url.includes('/channel/') || e.url.includes('/@');
-        if (isPl || isCh) return false;
+        if (!isVideo(e)) return false;
       } else if (typeFilter === 'playlist') {
-        const isPl = e.is_playlist || e.entry_type === 'playlist' || e.url.includes('/playlist?list=');
-        if (!isPl) return false;
+        if (!isPlaylist(e)) return false;
       } else if (typeFilter === 'channel') {
-        const isCh = e.entry_type === 'channel' || e.url.includes('/channel/') || e.url.includes('/@');
-        if (!isCh) return false;
+        if (!isChannel(e)) return false;
       }
 
       return true;
     });
   }, [allEntries, filterText, typeFilter]);
+
+  const isViewingChannels =
+    typeFilter === 'channel' || (filteredEntries.length > 0 && filteredEntries.every(isChannel));
 
   // Paginated slice
   const totalPages = Math.max(1, Math.ceil(filteredEntries.length / pageSize));
@@ -343,19 +362,100 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
   const channelUploader = media.uploader || 'YouTube Media';
 
   const renderChannelCard = (entry: PlaylistEntry, index: number, isGrid: boolean) => {
+    if (isGrid) {
+      return (
+        <div
+          key={entry.id || index}
+          className="group relative rounded-3xl border border-indigo-500/25 hover:border-indigo-500/60 bg-gradient-to-b from-slate-900/90 via-slate-950/90 to-indigo-950/30 p-5 sm:p-6 flex flex-col items-center text-center justify-between gap-4 transition-all duration-300 shadow-xl hover:shadow-indigo-500/15"
+        >
+          {/* Avatar Circle */}
+          <div
+            onClick={() => onOpenItem && onOpenItem(entry.url)}
+            className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden bg-slate-900 border-2 border-indigo-500/40 shrink-0 shadow-xl cursor-pointer group-hover:scale-105 group-hover:border-indigo-400 transition-all"
+          >
+            {entry.thumbnail ? (
+              <img
+                src={entry.thumbnail}
+                alt={entry.title}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-indigo-600/20 text-indigo-300 font-bold text-2xl">
+                {entry.title.charAt(0).toUpperCase()}
+              </div>
+            )}
+          </div>
+
+          {/* Info */}
+          <div className="w-full space-y-2">
+            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+              <h3
+                onClick={() => onOpenItem && onOpenItem(entry.url)}
+                className="text-base font-extrabold text-white group-hover:text-indigo-300 transition-colors cursor-pointer line-clamp-1"
+                title={entry.title}
+              >
+                {entry.title}
+              </h3>
+              <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0" />
+            </div>
+
+            <div className="inline-flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/40">
+              Kênh YouTube
+            </div>
+
+            <div className="text-xs text-slate-400 font-medium">
+              {entry.uploader && <span className="text-slate-300 font-semibold">{entry.uploader}</span>}
+              {entry.subscriber_count && (
+                <div className="text-indigo-300 font-bold text-xs mt-0.5">{entry.subscriber_count}</div>
+              )}
+            </div>
+
+            {entry.description && (
+              <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed px-1">
+                {entry.description}
+              </p>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="w-full pt-2 border-t border-white/[0.08] space-y-2">
+            <button
+              onClick={() => onOpenItem && onOpenItem(entry.url)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-indigo-600/30 cursor-pointer"
+            >
+              <Video className="w-4 h-4" />
+              <span>Xem Video của Kênh</span>
+            </button>
+            <button
+              onClick={() => {
+                const plUrl =
+                  entry.url.includes('/@') || entry.url.includes('/channel/')
+                    ? `${entry.url.replace(/\/+$/, '')}/playlists`
+                    : entry.url;
+                if (onOpenItem) onOpenItem(plUrl);
+              }}
+              className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-purple-300 border border-purple-500/30 text-xs font-semibold transition-all cursor-pointer"
+            >
+              <ListVideo className="w-3.5 h-3.5" />
+              <span>Xem Playlists</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // List mode: horizontal row
     return (
       <div
         key={entry.id || index}
-        className={`${
-          isGrid ? 'col-span-full' : 'w-full'
-        } rounded-3xl border border-indigo-500/30 bg-gradient-to-r from-slate-950/90 via-indigo-950/30 to-slate-900/90 p-4 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-5 hover:border-indigo-500/60 transition-all shadow-xl group`}
+        className="w-full rounded-2xl border border-indigo-500/25 hover:border-indigo-500/50 bg-slate-950/70 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all shadow-lg group"
       >
         <div
           onClick={() => onOpenItem && onOpenItem(entry.url)}
-          className="flex items-center gap-4 min-w-0 flex-1 cursor-pointer w-full sm:w-auto"
+          className="flex items-center gap-4 min-w-0 flex-1 cursor-pointer w-full md:w-auto"
         >
           {/* Avatar circle */}
-          <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden bg-slate-900 border-2 border-indigo-500/50 shrink-0 shadow-xl group-hover:scale-105 transition-transform">
+          <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden bg-slate-900 border-2 border-indigo-500/40 shrink-0 shadow-lg group-hover:scale-105 transition-transform">
             {entry.thumbnail ? (
               <img
                 src={entry.thumbnail}
@@ -370,13 +470,13 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
           </div>
 
           {/* Info */}
-          <div className="min-w-0 space-y-1.5 flex-1">
+          <div className="min-w-0 space-y-1 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-base sm:text-lg font-extrabold text-white group-hover:text-indigo-300 transition-colors">
+              <h3 className="text-base font-extrabold text-white group-hover:text-indigo-300 transition-colors">
                 {entry.title}
               </h3>
               <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0" />
-              <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/40">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/40">
                 Kênh YouTube
               </span>
             </div>
@@ -400,10 +500,10 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+        <div className="flex items-center gap-2 shrink-0 w-full md:w-auto justify-end">
           <button
             onClick={() => onOpenItem && onOpenItem(entry.url)}
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/30 cursor-pointer"
+            className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-indigo-600/30 cursor-pointer"
           >
             <Video className="w-4 h-4" />
             <span>Xem Video của Kênh</span>
@@ -416,7 +516,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                   : entry.url;
               if (onOpenItem) onOpenItem(plUrl);
             }}
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-purple-300 border border-purple-500/30 text-xs font-bold transition-all cursor-pointer"
+            className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-purple-300 border border-purple-500/30 text-xs font-semibold transition-all cursor-pointer"
           >
             <ListVideo className="w-4 h-4" />
             <span>Xem Playlists</span>
@@ -542,12 +642,12 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
       {/* 2. NAVIGATION BAR (YOUTUBE-STYLE TABS & VIEW SWITCHER) */}
       <div className="glass-panel p-3 rounded-2xl border border-white/10 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg">
         {/* Left: Category Tabs */}
-        <div className="flex items-center gap-1 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 scrollbar-none text-xs">
+        <div className="flex items-center gap-1.5 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 scrollbar-none text-xs">
           {[
-            { id: 'all', label: 'Tất cả' },
-            { id: 'video', label: 'Video lẻ' },
-            { id: 'playlist', label: 'Danh sách phát / Trọn bộ' },
-            { id: 'channel', label: 'Kênh' },
+            { id: 'all', label: 'Tất cả', count: allEntries.length },
+            { id: 'video', label: 'Video lẻ', count: videoCount },
+            { id: 'playlist', label: 'Danh sách phát', count: playlistCount },
+            { id: 'channel', label: 'Kênh', count: channelCount },
           ].map((tab) => {
             const isActive = typeFilter === tab.id;
             return (
@@ -557,13 +657,20 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                   setTypeFilter(tab.id as any);
                   setCurrentPage(1);
                 }}
-                className={`px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all cursor-pointer ${
+                className={`px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
                   isActive
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                     : 'bg-white/[0.03] hover:bg-white/[0.08] text-slate-400 hover:text-slate-200 border border-white/[0.05]'
                 }`}
               >
-                {tab.label}
+                <span>{tab.label}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                    isActive ? 'bg-white/20 text-white' : 'bg-white/[0.06] text-slate-500'
+                  }`}
+                >
+                  {tab.count}
+                </span>
               </button>
             );
           })}
@@ -615,57 +722,68 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
       </div>
 
       {/* 3. SELECTION & RANGE CONTROLS BAR */}
-      <div className="px-4 py-3 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
-        {/* Left: Quick Selection buttons */}
-        <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
-          <button
-            onClick={() => handleSelectAllTotal(!isAllSelected)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 border border-white/[0.08] font-semibold transition-all cursor-pointer"
-          >
-            {isAllSelected ? (
-              <CheckSquare className="w-3.5 h-3.5 text-indigo-400" />
-            ) : (
-              <Square className="w-3.5 h-3.5 text-slate-400" />
-            )}
-            <span>{isAllSelected ? 'Bỏ chọn tất cả' : `Chọn tất cả (${allEntries.length})`}</span>
-          </button>
-
-          <button
-            onClick={handleToggleCurrentPage}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] font-semibold transition-all cursor-pointer"
-          >
-            <span>{isCurrentPageAllSelected ? 'Bỏ chọn trang này' : 'Chọn cả trang này'}</span>
-          </button>
+      {isViewingChannels ? (
+        <div className="px-4 py-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-between gap-3 text-xs text-indigo-300">
+          <div className="flex items-center gap-2">
+            <User className="w-4 h-4 text-indigo-400 shrink-0" />
+            <span>
+              Danh sách kênh YouTube: Bấm <strong>"Xem Video của Kênh"</strong> để duyệt tất cả video hoặc <strong>"Xem Playlists"</strong> để tải theo album/danh sách phát.
+            </span>
+          </div>
         </div>
+      ) : (
+        <div className="px-4 py-3 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
+          {/* Left: Quick Selection buttons */}
+          <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
+            <button
+              onClick={() => handleSelectAllTotal(!isAllSelected)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 border border-white/[0.08] font-semibold transition-all cursor-pointer"
+            >
+              {isAllSelected ? (
+                <CheckSquare className="w-3.5 h-3.5 text-indigo-400" />
+              ) : (
+                <Square className="w-3.5 h-3.5 text-slate-400" />
+              )}
+              <span>{isAllSelected ? 'Bỏ chọn tất cả' : `Chọn tất cả (${allEntries.length})`}</span>
+            </button>
 
-        {/* Right: Range selector */}
-        <div className="flex items-center gap-2 flex-wrap w-full md:w-auto justify-end">
-          <span className="text-slate-400">Chọn từ số:</span>
-          <input
-            type="number"
-            min={1}
-            max={allEntries.length}
-            value={fromEp}
-            onChange={(e) => setFromEp(e.target.value)}
-            className="w-12 bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-center font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
-          />
-          <span className="text-slate-400">đến</span>
-          <input
-            type="number"
-            min={1}
-            max={allEntries.length}
-            value={toEp}
-            onChange={(e) => setToEp(e.target.value)}
-            className="w-12 bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-center font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
-          />
-          <button
-            onClick={handleApplyRange}
-            className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 font-bold transition-all cursor-pointer"
-          >
-            Chọn khoảng
-          </button>
+            <button
+              onClick={handleToggleCurrentPage}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] font-semibold transition-all cursor-pointer"
+            >
+              <span>{isCurrentPageAllSelected ? 'Bỏ chọn trang này' : 'Chọn cả trang này'}</span>
+            </button>
+          </div>
+
+          {/* Right: Range selector */}
+          <div className="flex items-center gap-2 flex-wrap w-full md:w-auto justify-end">
+            <span className="text-slate-400">Chọn từ số:</span>
+            <input
+              type="number"
+              min={1}
+              max={allEntries.length}
+              value={fromEp}
+              onChange={(e) => setFromEp(e.target.value)}
+              className="w-12 bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-center font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+            />
+            <span className="text-slate-400">đến</span>
+            <input
+              type="number"
+              min={1}
+              max={allEntries.length}
+              value={toEp}
+              onChange={(e) => setToEp(e.target.value)}
+              className="w-12 bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-center font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+            />
+            <button
+              onClick={handleApplyRange}
+              className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 font-bold transition-all cursor-pointer"
+            >
+              Chọn khoảng
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 4. RESULTS DISPLAY (GRID OR LIST VIEW) */}
       {paginatedEntries.length === 0 ? (
@@ -685,7 +803,6 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
             }
 
             const isSelected = selectedIds.has(entry.id);
-            const isExpanded = expandedItemId === entry.id;
             const isEntryPlaylist =
               entry.is_playlist || entry.entry_type === 'playlist' || entry.url.includes('/playlist?list=');
             const durationStr = formatDuration(entry.duration);
@@ -700,12 +817,16 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                 }`}
               >
                 {/* 16:9 Thumbnail with duration / playlist overlay */}
-                <div className="relative aspect-video w-full bg-slate-900 overflow-hidden">
+                <div
+                  onClick={() => onOpenItem && onOpenItem(entry.url)}
+                  className="relative aspect-video w-full bg-slate-900 overflow-hidden cursor-pointer group/thumb"
+                  title="Bấm để mở xem chi tiết và tùy chọn tải"
+                >
                   {entry.thumbnail ? (
                     <img
                       src={entry.thumbnail}
                       alt={entry.title}
-                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover/thumb:scale-105"
                       loading="lazy"
                     />
                   ) : (
@@ -713,6 +834,13 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                       <Video className="w-10 h-10" />
                     </div>
                   )}
+
+                  {/* Play hover overlay */}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-full bg-indigo-600/90 text-white flex items-center justify-center shadow-lg transform group-hover/thumb:scale-110 transition-transform">
+                      <Play className="w-5 h-5 ml-0.5 fill-current" />
+                    </div>
+                  </div>
 
                   {/* Top-Left Selection Checkbox */}
                   <div
@@ -749,9 +877,9 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                 <div className="p-3 flex-1 flex flex-col justify-between space-y-2.5">
                   <div className="space-y-1">
                     <h3
-                      onClick={() => toggleSelect(entry.id)}
-                      className="text-xs sm:text-sm font-bold text-slate-100 line-clamp-2 leading-snug cursor-pointer group-hover:text-indigo-300 transition-colors"
-                      title={entry.title}
+                      onClick={() => onOpenItem && onOpenItem(entry.url)}
+                      className="text-xs sm:text-sm font-bold text-slate-100 line-clamp-2 leading-snug cursor-pointer hover:text-indigo-300 transition-colors"
+                      title="Bấm để mở xem chi tiết và tùy chọn tải"
                     >
                       {entry.title}
                     </h3>
@@ -777,7 +905,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                         <button
                           onClick={() => handleDownloadSingleVideo(entry)}
                           className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold transition-all cursor-pointer"
-                          title="Tải video chất lượng cao"
+                          title="Tải nhanh video"
                         >
                           <Video className="w-3 h-3" />
                           <span>Video</span>
@@ -785,39 +913,21 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                         <button
                           onClick={() => handleDownloadSingleAudio(entry)}
                           className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl bg-pink-600/20 hover:bg-pink-600/30 text-pink-300 border border-pink-500/30 text-xs font-bold transition-all cursor-pointer"
-                          title="Tách âm thanh MP3 320k"
+                          title="Tách nhanh âm thanh MP3 320k"
                         >
                           <Music className="w-3 h-3" />
                           <span>MP3</span>
                         </button>
                         <button
-                          onClick={() => setExpandedItemId(isExpanded ? null : entry.id)}
-                          className={`p-1.5 rounded-xl border transition-all cursor-pointer ${
-                            isExpanded
-                              ? 'bg-indigo-600 text-white border-indigo-500'
-                              : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white border-white/10'
-                          }`}
-                          title="Tùy chỉnh định dạng riêng"
+                          onClick={() => onOpenItem && onOpenItem(entry.url)}
+                          className="p-1.5 rounded-xl bg-white/[0.04] hover:bg-indigo-600/30 text-slate-400 hover:text-indigo-300 border border-white/10 hover:border-indigo-500/40 transition-all cursor-pointer"
+                          title="Mở chi tiết & tùy chọn tải (như gắn link)"
                         >
                           <Settings2 className="w-3.5 h-3.5" />
                         </button>
                       </>
                     )}
                   </div>
-
-                  {/* Expandable Per-item Configuration */}
-                  {isExpanded && !isEntryPlaylist && (
-                    <div className="pt-2">
-                      <FormatConfigCard
-                        config={itemConfigs[entry.id] || globalConfig}
-                        onChange={(newCfg) =>
-                          setItemConfigs((prev) => ({ ...prev, [entry.id]: newCfg }))
-                        }
-                        showFilenameInput={true}
-                        titlePrefix="Tùy chỉnh mục này"
-                      />
-                    </div>
-                  )}
                 </div>
               </div>
             );
@@ -834,7 +944,6 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
             }
 
             const isSelected = selectedIds.has(entry.id);
-            const isExpanded = expandedItemId === entry.id;
             const isEntryPlaylist =
               entry.is_playlist || entry.entry_type === 'playlist' || entry.url.includes('/playlist?list=');
             const durationStr = formatDuration(entry.duration);
@@ -851,8 +960,12 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                 {/* Left: Checkbox + 16:9 Thumbnail + Info */}
                 <div className="flex items-center gap-3.5 flex-1 min-w-0">
                   <div
-                    onClick={() => toggleSelect(entry.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSelect(entry.id);
+                    }}
                     className="cursor-pointer text-indigo-400 p-1"
+                    title={isSelected ? 'Bỏ chọn' : 'Tích chọn'}
                   >
                     {isSelected ? (
                       <CheckSquare className="w-5 h-5 text-indigo-400" />
@@ -861,12 +974,16 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                     )}
                   </div>
 
-                  <div className="relative aspect-video w-32 sm:w-40 rounded-xl overflow-hidden bg-slate-900 shrink-0 border border-white/10">
+                  <div
+                    onClick={() => onOpenItem && onOpenItem(entry.url)}
+                    className="relative aspect-video w-32 sm:w-40 rounded-xl overflow-hidden bg-slate-900 shrink-0 border border-white/10 cursor-pointer group/thumb"
+                    title="Bấm để mở xem chi tiết và tùy chọn tải"
+                  >
                     {entry.thumbnail ? (
                       <img
                         src={entry.thumbnail}
                         alt={entry.title}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover/thumb:scale-105"
                         loading="lazy"
                       />
                     ) : (
@@ -874,6 +991,12 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                         <Video className="w-6 h-6" />
                       </div>
                     )}
+                    {/* Play hover overlay */}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-full bg-indigo-600/90 text-white flex items-center justify-center shadow-lg transform group-hover/thumb:scale-110 transition-transform">
+                        <Play className="w-4 h-4 ml-0.5 fill-current" />
+                      </div>
+                    </div>
                     <div className="absolute bottom-1 right-1 z-10">
                       {isEntryPlaylist ? (
                         <div className="px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-bold text-purple-300">
@@ -890,8 +1013,9 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                   {/* Title & Metadata */}
                   <div className="min-w-0 space-y-1">
                     <h3
-                      onClick={() => toggleSelect(entry.id)}
+                      onClick={() => onOpenItem && onOpenItem(entry.url)}
                       className="text-xs sm:text-sm font-bold text-slate-100 line-clamp-2 hover:text-indigo-300 cursor-pointer transition-colors"
+                      title="Bấm để mở xem chi tiết và tùy chọn tải"
                     >
                       {entry.title}
                     </h3>
@@ -921,6 +1045,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                       <button
                         onClick={() => handleDownloadSingleVideo(entry)}
                         className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold transition-all cursor-pointer"
+                        title="Tải nhanh video"
                       >
                         <Video className="w-3.5 h-3.5" />
                         <span>Tải Video</span>
@@ -928,14 +1053,15 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                       <button
                         onClick={() => handleDownloadSingleAudio(entry)}
                         className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-pink-600/20 hover:bg-pink-600/30 text-pink-300 border border-pink-500/30 text-xs font-bold transition-all cursor-pointer"
+                        title="Tách nhanh âm thanh MP3 320k"
                       >
                         <Music className="w-3.5 h-3.5" />
                         <span>Tách MP3</span>
                       </button>
                       <button
-                        onClick={() => setExpandedItemId(isExpanded ? null : entry.id)}
-                        className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white border border-white/10 transition-all cursor-pointer"
-                        title="Tùy chỉnh"
+                        onClick={() => onOpenItem && onOpenItem(entry.url)}
+                        className="p-2 rounded-xl bg-white/[0.04] hover:bg-indigo-600/30 text-slate-400 hover:text-indigo-300 border border-white/10 hover:border-indigo-500/40 transition-all cursor-pointer"
+                        title="Mở chi tiết & tùy chọn tải (như gắn link)"
                       >
                         <Settings2 className="w-4 h-4" />
                       </button>
@@ -1033,7 +1159,8 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
       )}
 
       {/* 6. FLOATING DOCK BOTTOM SUMMARY & BATCH DOWNLOAD ACTIONS */}
-      <div className="fixed bottom-4 left-4 right-4 max-w-6xl mx-auto z-40 p-3.5 sm:p-4 rounded-3xl bg-slate-950/90 border border-indigo-500/30 shadow-2xl backdrop-blur-2xl flex flex-col md:flex-row items-center justify-between gap-3">
+      {!isViewingChannels && selectedCount > 0 && (
+        <div className="fixed bottom-4 left-4 right-4 max-w-6xl mx-auto z-40 p-3.5 sm:p-4 rounded-3xl bg-slate-950/90 border border-indigo-500/30 shadow-2xl backdrop-blur-2xl flex flex-col md:flex-row items-center justify-between gap-3">
         <button
           onClick={onSelectFolder}
           className="flex items-center gap-2 text-xs text-slate-400 hover:text-indigo-300 font-mono truncate max-w-xs cursor-pointer"
@@ -1099,6 +1226,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
           </button>
         </div>
       </div>
+      )}
     </motion.div>
   );
 };

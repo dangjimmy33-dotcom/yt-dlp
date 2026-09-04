@@ -24,6 +24,13 @@ import {
   Zap,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  videoQualities,
+  videoContainers,
+  videoCodecs,
+  audioFormats,
+  audioBitrates,
+} from "./FormatConfigCard";
 
 interface FormatSelectorProps {
   media: MediaInfo;
@@ -63,46 +70,6 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
   const [trimStart, setTrimStart] = useState<string>("");
   const [trimEnd, setTrimEnd] = useState<string>("");
   const [customArgs, setCustomArgs] = useState<string>("");
-
-  const videoQualities = [
-    { id: "best", label: "Chất lượng cao nhất", note: "Auto Best Video + Audio", badge: "Max" },
-    { id: "2160p", label: "4K Ultra HD", note: "3840x2160 • 60fps", badge: "4K" },
-    { id: "1440p", label: "2K QHD", note: "2560x1440 • 60fps", badge: "2K" },
-    { id: "1080p", label: "1080p Full HD", note: "1920x1080 • Chuẩn sắc nét", badge: "FHD" },
-    { id: "720p", label: "720p HD", note: "1280x720 • Dung lượng nhẹ", badge: "HD" },
-    { id: "480p", label: "480p SD", note: "854x480 • Tiết kiệm dữ liệu", badge: "SD" },
-  ];
-
-  const videoContainers = [
-    { id: "mp4", label: "MP4", desc: "Tương thích cao nhất, phát mọi thiết bị" },
-    { id: "mkv", label: "MKV", desc: "Giữ trọn phụ đề rời & đa luồng audio" },
-    { id: "webm", label: "WebM", desc: "Tối ưu dung lượng nhẹ cho Web" },
-    { id: "mov", label: "MOV", desc: "Chuẩn Apple QuickTime" },
-  ];
-
-  const videoCodecs = [
-    { id: "auto", label: "Tự động", desc: "Tối ưu theo nguồn" },
-    { id: "h264", label: "H.264 / AVC", desc: "Tương thích 100%" },
-    { id: "hevc", label: "HEVC / H.265", desc: "Tiết kiệm dung lượng" },
-    { id: "av1", label: "AV1 Siêu Nét", desc: "Thế hệ mới tối tân" },
-    { id: "vp9", label: "VP9 Google", desc: "Chuẩn YouTube 4K" },
-  ];
-
-  const audioFormats = [
-    { id: "mp3", label: "MP3 Audio", note: "Tương thích 100% mọi thiết bị", icon: Music, color: "text-indigo-400" },
-    { id: "flac", label: "FLAC Lossless", note: "Chất lượng phòng thu nguyên bản", icon: Disc, color: "text-emerald-400" },
-    { id: "m4a", label: "M4A (AAC)", note: "Tối ưu cho Apple & iOS", icon: FileAudio, color: "text-sky-400" },
-    { id: "wav", label: "WAV Uncompressed", note: "Âm thanh gốc PCM không nén", icon: Radio, color: "text-purple-400" },
-    { id: "opus", label: "OPUS Codec", note: "Codec hiện đại chất lượng cao", icon: Zap, color: "text-amber-400" },
-    { id: "ogg", label: "OGG Vorbis", note: "Mã nguồn mở chất lượng cao", icon: Sliders, color: "text-pink-400" },
-  ];
-
-  const audioBitrates = [
-    { id: "320K", label: "320 kbps (Cực cao • Studio Master)" },
-    { id: "256K", label: "256 kbps (Rất cao)" },
-    { id: "192K", label: "192 kbps (Chuẩn CD)" },
-    { id: "128K", label: "128 kbps (Cơ bản)" },
-  ];
 
   const handleDownloadVideo = () => {
     const req: DownloadRequest = {
@@ -212,9 +179,9 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
             {/* Resolution Grid */}
             <div className="space-y-2">
               <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Chọn độ phân giải:
+                <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Chọn độ phân giải ({videoQualities.length} mức):
               </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1 scrollbar-thin">
                 {videoQualities.map((q) => {
                   const isSelected = selectedQuality === q.id;
                   return (
@@ -254,9 +221,9 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
               {/* Container format */}
               <div className="p-3.5 rounded-xl bg-slate-950/40 border border-white/[0.06] space-y-2.5">
                 <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-purple-400" /> Định dạng đóng gói (Container):
+                  <Layers className="w-3.5 h-3.5 text-purple-400" /> Định dạng đóng gói (Container - {videoContainers.length} định dạng):
                 </span>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1 scrollbar-thin">
                   {videoContainers.map((c) => (
                     <button
                       key={c.id}
@@ -267,7 +234,14 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
                           : "bg-white/[0.03] border border-white/[0.06] text-slate-400 hover:text-white"
                       }`}
                     >
-                      <span className="text-xs font-bold block">{c.label}</span>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-bold block truncate">{c.label}</span>
+                        {c.badge && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/[0.06] text-slate-400 font-mono shrink-0">
+                            {c.badge}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[10px] opacity-75 block truncate">{c.desc}</span>
                     </button>
                   ))}
@@ -277,9 +251,9 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
               {/* Codec */}
               <div className="p-3.5 rounded-xl bg-slate-950/40 border border-white/[0.06] space-y-2.5">
                 <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Cpu className="w-3.5 h-3.5 text-pink-400" /> Bộ mã hóa video (Codec):
+                  <Cpu className="w-3.5 h-3.5 text-pink-400" /> Bộ mã hóa video (Codec - {videoCodecs.length} codec):
                 </span>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1 scrollbar-thin">
                   {videoCodecs.map((c) => (
                     <button
                       key={c.id}
@@ -297,7 +271,7 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
                   ))}
                 </div>
                 <p className="text-[10px] text-slate-400">
-                  H.264 cho độ tương thích cao nhất; AV1/HEVC cho độ nét tối đa.
+                  H.264 cho độ tương thích cao nhất; AV1/HEVC cho độ nét tối đa; ProRes cho dựng phim.
                 </p>
               </div>
             </div>
@@ -316,9 +290,9 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
             {/* Format selection */}
             <div className="space-y-2">
               <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-pink-400" /> Chọn định dạng âm thanh:
+                <Sparkles className="w-3.5 h-3.5 text-pink-400" /> Chọn định dạng âm thanh ({audioFormats.length} định dạng):
               </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1 scrollbar-thin">
                 {audioFormats.map((af) => {
                   const isSelected = selectedAudioFormat === af.id;
                   const Icon = af.icon;
@@ -355,9 +329,9 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
               {/* Bitrate selection */}
               <div className="p-3.5 rounded-xl bg-slate-950/40 border border-white/[0.06] space-y-2.5">
                 <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Sliders className="w-3.5 h-3.5 text-indigo-400" /> Chất lượng Bitrate (Độ phân giải âm):
+                  <Sliders className="w-3.5 h-3.5 text-indigo-400" /> Chất lượng Bitrate ({audioBitrates.length} mức):
                 </span>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1 scrollbar-thin">
                   {audioBitrates.map((b) => (
                     <button
                       key={b.id}

@@ -85,7 +85,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               )}
               {isDownloading && (
                 <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20 animate-pulse">
-                  <Download className="w-3 h-3 animate-bounce" /> {task.percent.toFixed(1)}%
+                  <Download className="w-3 h-3 animate-bounce" /> {task.percent > 0 ? `${task.percent.toFixed(1)}%` : (task.speed && task.speed !== "0 B/s" ? "Đang tải..." : "Bắt đầu...")}
                 </span>
               )}
             </div>
@@ -120,9 +120,13 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
         <div className="space-y-1">
           <div className="w-full h-2 rounded-full bg-slate-900/80 border border-white/[0.06] overflow-hidden">
             <motion.div
-              className="h-full progress-wave rounded-full shadow-lg shadow-indigo-500/50"
+              className={`h-full progress-wave rounded-full shadow-lg shadow-indigo-500/50 ${
+                task.percent === 0 ? "animate-pulse opacity-75" : ""
+              }`}
               initial={{ width: 0 }}
-              animate={{ width: `${Math.min(100, Math.max(0, task.percent))}%` }}
+              animate={{
+                width: task.percent > 0 ? `${Math.min(100, Math.max(0, task.percent))}%` : "12%",
+              }}
               transition={{ duration: 0.3 }}
             />
           </div>

@@ -56,6 +56,7 @@ import {
   Compass,
   Globe,
   Layers,
+  ArrowLeft,
 } from "lucide-react";
 
 export default function App() {
@@ -63,6 +64,7 @@ export default function App() {
   const [url, setUrl] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [mediaInfo, setMediaInfo] = useState<MediaInfo | null>(null);
+  const [mediaHistory, setMediaHistory] = useState<MediaInfo[]>([]);
   const [detectedClipboardUrl, setDetectedClipboardUrl] = useState<string | null>(null);
   const [pendingSniffedStream, setPendingSniffedStream] = useState<SniffedStreamPayload | null>(null);
   const lastCheckedClipboard = useRef<string>("");
@@ -383,10 +385,24 @@ export default function App() {
     return "Không thể phân tích đường link này.";
   };
 
+  const handleGoBack = () => {
+    if (mediaHistory.length === 0) return;
+    const previous = mediaHistory[mediaHistory.length - 1];
+    setMediaHistory((prev) => prev.slice(0, -1));
+    setMediaInfo(previous);
+    if (previous.url) {
+      setUrl(previous.url);
+    }
+  };
+
   // Analyze media URL
-  const handleAnalyze = async (urlToAnalyze?: string) => {
+  const handleAnalyze = async (urlToAnalyze?: string, clearHistory = true) => {
     const targetUrl = (urlToAnalyze || url).trim();
     if (!targetUrl) return;
+
+    if (clearHistory) {
+      setMediaHistory([]);
+    }
 
     setIsLoading(true);
     try {
@@ -1027,13 +1043,33 @@ export default function App() {
               {/* URL Input Box */}
               <UrlInputBox
                 url={url}
-                setUrl={setUrl}
-                onAnalyze={handleAnalyze}
+                setUrl={(newUrl) => {
+                  setUrl(newUrl);
+                  if (!newUrl) {
+                    setMediaHistory([]);
+                  }
+                }}
+                onAnalyze={(inputUrl) => handleAnalyze(inputUrl, true)}
                 onQuickDownload={handleQuickDownload}
                 onOpenBatchModal={() => setIsBatchModalOpen(true)}
                 onOpenSupportedSites={() => setIsSupportedSitesOpen(true)}
                 isLoading={isLoading}
               />
+
+              {/* Back navigation when navigated from a playlist or search list */}
+              {mediaHistory.length > 0 && !isLoading && (
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={handleGoBack}
+                    className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-white border border-white/10 hover:border-indigo-500/40 text-xs font-semibold cursor-pointer transition-all shadow-sm group"
+                  >
+                    <ArrowLeft className="w-4 h-4 text-indigo-400 group-hover:-translate-x-1 transition-transform" />
+                    <span>
+                      Quay lại: {mediaHistory[mediaHistory.length - 1]?.title || "Danh sách trước"}
+                    </span>
+                  </button>
+                </div>
+              )}
 
               {/* Loading Animation Skeleton OR Media Preview / Results */}
               {isLoading ? (
@@ -1056,8 +1092,11 @@ export default function App() {
                       ) {
                         targetUrl = `${targetUrl.replace(/\/+$/, "")}/videos`;
                       }
+                      if (mediaInfo) {
+                        setMediaHistory((prev) => [...prev, mediaInfo]);
+                      }
                       setUrl(targetUrl);
-                      void handleAnalyze(targetUrl);
+                      void handleAnalyze(targetUrl, false);
                     }}
                     onSearchMore={(count) => {
                       const rawQuery = (url || mediaInfo.url || "")
@@ -1067,7 +1106,7 @@ export default function App() {
                         .trim();
                       const target = `ytsearch${count}:${rawQuery}`;
                       setUrl(target);
-                      void handleAnalyze(target);
+                      void handleAnalyze(target, false);
                     }}
                   />
                 ) : (

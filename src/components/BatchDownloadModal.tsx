@@ -3,19 +3,16 @@ import { DownloadRequest, AppSettings } from "../types";
 import {
   X,
   Layers,
-  Video,
-  Music,
   Download,
   ClipboardPaste,
   Trash2,
-  Sparkles,
   FolderOpen,
-  CheckCircle2,
-  AlertCircle,
   FileText,
+  SlidersHorizontal,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { FormatConfigCard, FullFormatConfig } from "./FormatConfigCard";
 
 interface BatchDownloadModalProps {
   isOpen: boolean;
@@ -35,10 +32,19 @@ export const BatchDownloadModal: React.FC<BatchDownloadModalProps> = ({
   initialUrls = [],
 }) => {
   const [rawText, setRawText] = useState<string>("");
-  const [downloadType, setDownloadType] = useState<"video" | "audio">("video");
-  const [quality, setQuality] = useState<string>("1080p");
-  const [audioFormat, setAudioFormat] = useState<string>("mp3");
-  const [audioQuality, setAudioQuality] = useState<string>("320K");
+  const [formatConfig, setFormatConfig] = useState<FullFormatConfig>({
+    downloadType: "video",
+    quality: settings.defaultVideoQuality || "1080p",
+    videoContainer: "mp4",
+    videoCodec: "auto",
+    audioFormat: settings.defaultAudioFormat || "mp3",
+    audioQuality: settings.defaultAudioQuality || "320K",
+    audioNormalize: false,
+    embedSubtitles: settings.embedSubtitles || false,
+    embedThumbnail: settings.embedThumbnail ?? true,
+    embedMetadata: settings.embedMetadata ?? true,
+    sponsorblock: settings.sponsorBlock || false,
+  });
 
   useEffect(() => {
     if (initialUrls && initialUrls.length > 0) {
@@ -106,20 +112,21 @@ export const BatchDownloadModal: React.FC<BatchDownloadModalProps> = ({
         id: `batch-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
         url,
         title:
-          downloadType === "audio"
-            ? `[Audio ${audioFormat.toUpperCase()}] ${displayTitle}`
-            : `[Video ${quality}] ${displayTitle}`,
-        download_type: downloadType,
-        quality: downloadType === "video" ? quality : "best",
-        video_container: downloadType === "video" ? "mp4" : undefined,
-        audio_format: downloadType === "audio" ? audioFormat : undefined,
-        audio_quality: downloadType === "audio" ? audioQuality : undefined,
-        audio_normalize: false, // Default untouched 100% full volume
+          formatConfig.downloadType === "audio"
+            ? `[Audio ${formatConfig.audioFormat.toUpperCase()}] ${displayTitle}`
+            : `[Video ${formatConfig.quality}] ${displayTitle}`,
+        download_type: formatConfig.downloadType,
+        quality: formatConfig.downloadType === "video" ? formatConfig.quality : "best",
+        video_container: formatConfig.downloadType === "video" ? formatConfig.videoContainer : undefined,
+        video_codec: formatConfig.downloadType === "video" ? formatConfig.videoCodec : undefined,
+        audio_format: formatConfig.downloadType === "audio" ? formatConfig.audioFormat : undefined,
+        audio_quality: formatConfig.downloadType === "audio" ? formatConfig.audioQuality : undefined,
+        audio_normalize: formatConfig.audioNormalize,
         output_dir: settings.defaultDownloadDir,
-        embed_subtitles: settings.embedSubtitles,
-        embed_thumbnail: true,
-        embed_metadata: settings.embedMetadata,
-        sponsorblock: settings.sponsorBlock,
+        embed_subtitles: formatConfig.embedSubtitles,
+        embed_thumbnail: formatConfig.embedThumbnail,
+        embed_metadata: formatConfig.embedMetadata,
+        sponsorblock: formatConfig.sponsorblock,
         cookies_browser: settings.cookiesBrowser,
       };
     });
@@ -130,15 +137,15 @@ export const BatchDownloadModal: React.FC<BatchDownloadModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        className="w-full max-w-2xl max-h-[90vh] glass-panel rounded-3xl p-5 md:p-6 flex flex-col space-y-4 shadow-2xl border border-indigo-500/25 relative overflow-hidden"
+        className="w-full max-w-3xl max-h-[92vh] glass-panel rounded-3xl p-4 sm:p-6 flex flex-col shadow-2xl border border-indigo-500/25 relative overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
+        <div className="flex items-center justify-between pb-3 border-b border-white/[0.08] shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shadow-lg shadow-indigo-500/20">
               <Layers className="w-5 h-5" />
@@ -151,7 +158,7 @@ export const BatchDownloadModal: React.FC<BatchDownloadModalProps> = ({
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Dán danh sách nhiều video, tập phim hoặc bài hát để tải hàng loạt đa luồng siêu tốc.
+                Dán danh sách nhiều link để tải hàng loạt với cấu hình đồng bộ chuyên nghiệp.
               </p>
             </div>
           </div>
@@ -164,125 +171,61 @@ export const BatchDownloadModal: React.FC<BatchDownloadModalProps> = ({
           </button>
         </div>
 
-        {/* Textarea Input Container */}
-        <div className="space-y-1.5 flex-1 min-h-[160px] flex flex-col">
-          <div className="flex items-center justify-between text-xs">
-            <label className="font-semibold text-slate-300 flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5 text-indigo-400" />
-              Danh sách link (Mỗi link 1 dòng):
-            </label>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handlePasteFromClipboard}
-                className="flex items-center gap-1 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer"
-              >
-                <ClipboardPaste className="w-3 h-3" />
-                <span>Dán từ bộ nhớ tạm</span>
-              </button>
-              {rawText && (
+        {/* Scrollable Body */}
+        <div className="flex-1 overflow-y-auto pr-1 my-3 space-y-4 max-h-[calc(92vh-150px)]">
+          {/* Textarea Input Container */}
+          <div className="space-y-1.5 flex flex-col">
+            <div className="flex items-center justify-between text-xs">
+              <label className="font-semibold text-slate-300 flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                Danh sách link (Mỗi link 1 dòng):
+              </label>
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setRawText("")}
-                  className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-red-400 cursor-pointer"
+                  onClick={handlePasteFromClipboard}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer"
                 >
-                  <Trash2 className="w-3 h-3" />
-                  <span>Xóa hết</span>
+                  <ClipboardPaste className="w-3 h-3" />
+                  <span>Dán từ bộ nhớ tạm</span>
                 </button>
-              )}
-            </div>
-          </div>
-
-          <textarea
-            value={rawText}
-            onChange={(e) => setRawText(e.target.value)}
-            placeholder={`https://www.youtube.com/watch?v=...\nhttps://www.youtube.com/watch?v=...\nhttps://tiktok.com/@user/video/...\nhttps://animevietsub.li/phim/...`}
-            rows={7}
-            className="w-full flex-1 bg-slate-900/80 border border-white/10 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 rounded-2xl p-3 text-xs md:text-sm font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none resize-none transition-all"
-          />
-        </div>
-
-        {/* Batch Configuration Controls */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
-          {/* Mode Switcher */}
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              Định dạng tải toàn bộ:
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setDownloadType("video")}
-                className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  downloadType === "video"
-                    ? "bg-indigo-600/30 border border-indigo-500/50 text-white shadow-md shadow-indigo-500/20"
-                    : "bg-white/[0.03] border border-white/[0.06] text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <Video className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Video MP4</span>
-              </button>
-
-              <button
-                onClick={() => setDownloadType("audio")}
-                className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  downloadType === "audio"
-                    ? "bg-pink-600/30 border border-pink-500/50 text-white shadow-md shadow-pink-500/20"
-                    : "bg-white/[0.03] border border-white/[0.06] text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <Music className="w-3.5 h-3.5 text-pink-400" />
-                <span>Tách Nhạc MP3</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Quality / Resolution Selector */}
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              {downloadType === "video" ? "Độ phân giải mặc định:" : "Chất lượng âm thanh:"}
-            </label>
-
-            {downloadType === "video" ? (
-              <select
-                value={quality}
-                onChange={(e) => setQuality(e.target.value)}
-                className="w-full bg-slate-900 border border-white/10 text-slate-200 text-xs font-semibold rounded-xl py-2 px-3 focus:outline-none focus:border-indigo-500/50"
-              >
-                <option value="best">Cao nhất (Tự động 4K / 1080p)</option>
-                <option value="2160p">4K Ultra HD (2160p)</option>
-                <option value="1440p">2K QHD (1440p)</option>
-                <option value="1080p">1080p Full HD (Khuyên dùng)</option>
-                <option value="720p">720p HD (Tiết kiệm dung lượng)</option>
-                <option value="480p">480p SD</option>
-              </select>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={audioFormat}
-                  onChange={(e) => setAudioFormat(e.target.value)}
-                  className="bg-slate-900 border border-white/10 text-slate-200 text-xs font-semibold rounded-xl py-2 px-2.5 focus:outline-none focus:border-pink-500/50"
-                >
-                  <option value="mp3">MP3</option>
-                  <option value="m4a">M4A (AAC)</option>
-                  <option value="flac">FLAC (Lossless)</option>
-                  <option value="wav">WAV</option>
-                </select>
-
-                <select
-                  value={audioQuality}
-                  onChange={(e) => setAudioQuality(e.target.value)}
-                  className="bg-slate-900 border border-white/10 text-slate-200 text-xs font-semibold rounded-xl py-2 px-2.5 focus:outline-none focus:border-pink-500/50"
-                >
-                  <option value="320K">320 kbps (Cực cao)</option>
-                  <option value="256K">256 kbps</option>
-                  <option value="192K">192 kbps</option>
-                  <option value="128K">128 kbps</option>
-                </select>
+                {rawText && (
+                  <button
+                    onClick={() => setRawText("")}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-red-400 cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Xóa hết</span>
+                  </button>
+                )}
               </div>
-            )}
+            </div>
+
+            <textarea
+              value={rawText}
+              onChange={(e) => setRawText(e.target.value)}
+              placeholder={`https://www.youtube.com/watch?v=...\nhttps://www.youtube.com/watch?v=...\nhttps://tiktok.com/@user/video/...\nhttps://animevietsub.li/phim/...`}
+              rows={4}
+              className="w-full bg-slate-900/80 border border-white/10 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 rounded-2xl p-3 text-xs md:text-sm font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none resize-none transition-all"
+            />
+          </div>
+
+          {/* Synchronized Format Configuration Card */}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Cấu hình tải đồng bộ cho toàn bộ link:</span>
+            </div>
+            <FormatConfigCard
+              config={formatConfig}
+              onChange={setFormatConfig}
+              showFilenameInput={false}
+              titlePrefix="Cấu hình tải toàn bộ"
+            />
           </div>
         </div>
 
         {/* Target Folder & Start Button Footer */}
-        <div className="pt-2 border-t border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="pt-3 border-t border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
           <button
             onClick={onSelectFolder}
             className="flex items-center gap-2 text-xs text-slate-400 hover:text-indigo-300 font-mono truncate max-w-xs cursor-pointer"
@@ -310,7 +253,7 @@ export const BatchDownloadModal: React.FC<BatchDownloadModalProps> = ({
               }`}
             >
               <Download className="w-4 h-4" />
-              <span>Bắt Đầu Tải {detectedUrls.length > 0 ? `(${detectedUrls.length} Video)` : ""}</span>
+              <span>Bắt Đầu Tải {detectedUrls.length > 0 ? `(${detectedUrls.length} Link)` : ""}</span>
             </button>
           </div>
         </div>
