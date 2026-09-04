@@ -52,10 +52,8 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
 }) => {
   const allEntries = useMemo(() => media.entries || [], [media.entries]);
 
-  // Selected entry IDs set
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
-    return new Set(allEntries.map((e) => e.id));
-  });
+  // Selected entry IDs set - Default to empty (bỏ chọn tất cả theo mặc định)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set<string>());
 
   const [filterText, setFilterText] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'video' | 'playlist' | 'channel'>('all');
@@ -82,7 +80,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
 
   // Sync state whenever media changes
   useEffect(() => {
-    setSelectedIds(new Set(allEntries.map((e) => e.id)));
+    setSelectedIds(new Set<string>());
     setFromEp('1');
     setToEp(String(allEntries.length || 1));
     setCurrentPage(1);

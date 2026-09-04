@@ -187,7 +187,7 @@ export const FormatConfigCard: React.FC<FormatConfigCardProps> = ({
               <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Chọn độ phân giải:
               </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto pr-1 scrollbar-thin">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
                 {videoQualities.map((q) => {
                   const isSelected = config.quality === q.id && config.downloadType === 'video';
                   return (
@@ -229,7 +229,7 @@ export const FormatConfigCard: React.FC<FormatConfigCardProps> = ({
                 <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                   <Layers className="w-3.5 h-3.5 text-purple-400" /> Định dạng đóng gói (Container - {videoContainers.length} định dạng):
                 </span>
-                <div className="grid grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1 scrollbar-thin">
+                <div className="grid grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1 custom-scrollbar">
                   {videoContainers.map((c) => (
                     <button
                       key={c.id}
@@ -259,7 +259,7 @@ export const FormatConfigCard: React.FC<FormatConfigCardProps> = ({
                 <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                   <Cpu className="w-3.5 h-3.5 text-pink-400" /> Bộ mã hóa video (Codec - {videoCodecs.length} codec):
                 </span>
-                <div className="grid grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1 scrollbar-thin">
+                <div className="grid grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1 custom-scrollbar">
                   {videoCodecs.map((c) => (
                     <button
                       key={c.id}
@@ -297,7 +297,7 @@ export const FormatConfigCard: React.FC<FormatConfigCardProps> = ({
               <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-pink-400" /> Chọn định dạng âm thanh ({audioFormats.length} định dạng):
               </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto pr-1 scrollbar-thin">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
                 {audioFormats.map((af) => {
                   const isSelected = config.audioFormat === af.id && config.downloadType === 'audio';
                   const Icon = af.icon;

@@ -35,7 +35,7 @@ export const PlaylistModal: React.FC<PlaylistModalProps> = ({
   onDownloadSelected,
 }) => {
   const [entries, setEntries] = useState<PlaylistEntry[]>(
-    (media.entries || []).map((e) => ({ ...e, selected: true }))
+    (media.entries || []).map((e) => ({ ...e, selected: false }))
   );
   const [search, setSearch] = useState<string>("");
   const [fromEp, setFromEp] = useState<string>("1");
