@@ -81,11 +81,11 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
   ];
 
   const videoCodecs = [
-    { id: "auto", label: "Tự động (Khuyên dùng)" },
-    { id: "h264", label: "H.264 / AVC (Tương thích 100%)" },
-    { id: "hevc", label: "HEVC / H.265 (Tiết kiệm dung lượng)" },
-    { id: "av1", label: "AV1 (Siêu nét thế hệ mới)" },
-    { id: "vp9", label: "VP9 (Chuẩn Google/YouTube)" },
+    { id: "auto", label: "Tự động", desc: "Tối ưu theo nguồn" },
+    { id: "h264", label: "H.264 / AVC", desc: "Tương thích 100%" },
+    { id: "hevc", label: "HEVC / H.265", desc: "Tiết kiệm dung lượng" },
+    { id: "av1", label: "AV1 Siêu Nét", desc: "Thế hệ mới tối tân" },
+    { id: "vp9", label: "VP9 Google", desc: "Chuẩn YouTube 4K" },
   ];
 
   const audioFormats = [
@@ -256,19 +256,25 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
                 <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                   <Cpu className="w-3.5 h-3.5 text-pink-400" /> Bộ mã hóa video (Codec):
                 </span>
-                <select
-                  value={selectedCodec}
-                  onChange={(e) => setSelectedCodec(e.target.value)}
-                  className="w-full glass-input px-3 py-2 rounded-xl text-xs text-slate-200 focus:outline-none"
-                >
-                  {videoCodecs.map((codec) => (
-                    <option key={codec.id} value={codec.id} className="bg-slate-900 text-slate-200">
-                      {codec.label}
-                    </option>
+                <div className="grid grid-cols-2 gap-2">
+                  {videoCodecs.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setSelectedCodec(c.id)}
+                      className={`p-2 rounded-lg text-left transition-all cursor-pointer ${
+                        selectedCodec === c.id
+                          ? "bg-pink-500/20 border border-pink-500/50 text-pink-200 shadow-sm"
+                          : "bg-white/[0.03] border border-white/[0.06] text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      <span className="text-xs font-bold block">{c.label}</span>
+                      <span className="text-[10px] opacity-75 block truncate">{c.desc}</span>
+                    </button>
                   ))}
-                </select>
-                <p className="text-[11px] text-slate-400">
-                  H.264 cho độ tương thích cao nhất trên TV/Điện thoại cũ; AV1/HEVC cho độ nét tối đa.
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  H.264 cho độ tương thích cao nhất; AV1/HEVC cho độ nét tối đa.
                 </p>
               </div>
             </div>

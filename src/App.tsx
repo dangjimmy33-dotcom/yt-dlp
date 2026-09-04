@@ -601,7 +601,7 @@ export default function App() {
   const isEngineReady = !!engineStatus?.ytdlp_available && !!engineStatus?.ffmpeg_available;
 
   return (
-    <div className="relative min-h-screen w-full bg-slate-950 text-slate-100 flex flex-col pt-11 overflow-hidden select-none">
+    <div className="relative h-screen w-screen bg-slate-950 text-slate-100 flex flex-col pt-11 overflow-hidden select-none">
       {/* Background Animated Neon Mesh Spheres */}
       <div className="mesh-glow w-[500px] h-[500px] bg-indigo-600/25 top-[-100px] left-[-100px]" />
       <div className="mesh-glow w-[600px] h-[600px] bg-purple-600/20 bottom-[-150px] right-[-150px]" />
@@ -615,7 +615,7 @@ export default function App() {
       />
 
       {/* Main App Layout */}
-      <div className="flex-1 flex flex-col max-w-6xl w-full mx-auto p-4 md:p-6 space-y-5 z-10 overflow-y-auto">
+      <div className="flex-1 flex flex-col max-w-6xl w-full mx-auto p-4 md:p-6 pb-28 space-y-5 z-10 overflow-y-auto overflow-x-hidden min-h-0">
         {/* Navigation Bar */}
         <div className="flex items-center justify-between gap-3 p-1.5 rounded-2xl glass-panel">
           <div className="flex items-center gap-1.5">
