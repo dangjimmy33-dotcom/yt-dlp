@@ -4,6 +4,18 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CustomDomainRule {
+    pub id: String,
+    pub domain: String,
+    pub name: String,
+    pub original_url: String,
+    pub referer: String,
+    pub is_enabled: bool,
+    pub added_at: String,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CustomPluginInfo {
     pub id: String,
     pub name: String,
@@ -22,6 +34,142 @@ pub fn get_plugins_dir() -> PathBuf {
     base_dir.push("plugins");
     let _ = fs::create_dir_all(&base_dir);
     base_dir
+}
+
+pub fn get_custom_domains_file() -> PathBuf {
+    let mut base_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    base_dir.push("YT-DLP-Studio");
+    let _ = fs::create_dir_all(&base_dir);
+    base_dir.push("custom_domains.json");
+    base_dir
+}
+
+pub fn load_custom_domains() -> Vec<CustomDomainRule> {
+    let file = get_custom_domains_file();
+    if let Ok(content) = fs::read_to_string(&file) {
+        if let Ok(domains) = serde_json::from_str::<Vec<CustomDomainRule>>(&content) {
+            return domains;
+        }
+    }
+    Vec::new()
+}
+
+pub fn save_custom_domains(domains: &[CustomDomainRule]) -> Result<(), String> {
+    let file = get_custom_domains_file();
+    let json = serde_json::to_string_pretty(domains)
+        .map_err(|e| format!("Lỗi serialize JSON: {e}"))?;
+    fs::write(&file, json).map_err(|e| format!("Không thể ghi custom_domains.json: {e}"))
+}
+
+pub fn clean_domain_name(url_or_domain: &str) -> (String, String, String) {
+    let trimmed = url_or_domain.trim();
+    let full_url = if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+        format!("https://{trimmed}")
+    } else {
+        trimmed.to_string()
+    };
+
+    let domain = if let Ok(parsed) = url::Url::parse(&full_url) {
+        parsed.host_str().unwrap_or(trimmed).to_lowercase()
+    } else {
+        trimmed
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .split('/')
+            .next()
+            .unwrap_or(trimmed)
+            .to_lowercase()
+    };
+
+    let clean_domain = domain.trim_start_matches("www.").to_string();
+    let referer = format!("https://{clean_domain}/");
+
+    let display_name = if clean_domain.contains("animevietsub") {
+        "AnimeVietSub".to_string()
+    } else if clean_domain.contains("animehay") {
+        "AnimeHay".to_string()
+    } else if clean_domain.contains("motchill") {
+        "MotChill".to_string()
+    } else if clean_domain.contains("phimmoi") {
+        "PhimMới".to_string()
+    } else if clean_domain.contains("bilibili") {
+        "Bilibili".to_string()
+    } else {
+        let parts: Vec<&str> = clean_domain.split('.').collect();
+        if let Some(first) = parts.first() {
+            let mut c = first.chars();
+            match c.next() {
+                None => clean_domain.clone(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        } else {
+            clean_domain.clone()
+        }
+    };
+
+    (clean_domain, display_name, referer)
+}
+
+pub fn add_custom_domain(url_or_domain: &str, custom_name: Option<&str>) -> Result<CustomDomainRule, String> {
+    let (clean_domain, default_name, referer) = clean_domain_name(url_or_domain);
+    if clean_domain.is_empty() {
+        return Err("Tên miền không hợp lệ".to_string());
+    }
+
+    let mut domains = load_custom_domains();
+    if let Some(existing) = domains.iter().find(|d| d.domain == clean_domain) {
+        return Ok(existing.clone());
+    }
+
+    let now_secs = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let rule = CustomDomainRule {
+        id: format!("{clean_domain}_{now_secs}"),
+        domain: clean_domain,
+        name: custom_name.filter(|s| !s.trim().is_empty()).unwrap_or(&default_name).to_string(),
+        original_url: url_or_domain.trim().to_string(),
+        referer,
+        is_enabled: true,
+        added_at: format!("{now_secs}"),
+        note: Some("Tự động bóc tách luồng HLS / m3u8 và gắn Referer".to_string()),
+    };
+
+    domains.push(rule.clone());
+    save_custom_domains(&domains)?;
+    Ok(rule)
+}
+
+pub fn toggle_custom_domain(id: &str, enable: bool) -> Result<(), String> {
+    let mut domains = load_custom_domains();
+    if let Some(item) = domains.iter_mut().find(|d| d.id == id || d.domain == id) {
+        item.is_enabled = enable;
+        save_custom_domains(&domains)?;
+        return Ok(());
+    }
+    Err("Không tìm thấy website trong danh sách".to_string())
+}
+
+pub fn remove_custom_domain(id: &str) -> Result<(), String> {
+    let mut domains = load_custom_domains();
+    domains.retain(|d| d.id != id && d.domain != id);
+    save_custom_domains(&domains)
+}
+
+pub fn get_referer_for_url(url_str: &str) -> Option<String> {
+    let (domain, _, default_referer) = clean_domain_name(url_str);
+    let domains = load_custom_domains();
+    for d in domains {
+        if d.is_enabled && (url_str.contains(&d.domain) || domain == d.domain) {
+            return Some(d.referer);
+        }
+    }
+    if !domain.is_empty() {
+        return Some(default_referer);
+    }
+    None
 }
 
 pub fn get_system_yt_dlp_plugins_dir() -> Option<PathBuf> {
@@ -156,7 +304,6 @@ pub fn install_plugin_file(source_path: &Path) -> Result<CustomPluginInfo, Strin
     fs::copy(source_path, &target_path)
         .map_err(|e| format!("Không thể sao chép file plugin: {e}"))?;
 
-    // Also sync to system yt-dlp plugin dir for direct engine discovery
     if let Some(sys_dir) = get_system_yt_dlp_plugins_dir() {
         let _ = fs::copy(source_path, sys_dir.join(file_name));
     }
@@ -173,7 +320,6 @@ pub async fn install_plugin_from_url(url: &str, custom_name: Option<&str>) -> Re
         return Err("URL không hợp lệ. Vui lòng nhập link https://...".to_string());
     }
 
-    // Convert standard GitHub file link to raw.githubusercontent link
     let effective_url = if clean_url.contains("github.com") && clean_url.contains("/blob/") {
         clean_url
             .replace("github.com", "raw.githubusercontent.com")
@@ -203,7 +349,7 @@ pub async fn install_plugin_from_url(url: &str, custom_name: Option<&str>) -> Re
     let target_path = target_dir.join(&filename);
 
     let client = reqwest::Client::builder()
-        .user_agent("YT-DLP-Studio-GUI/1.0")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| format!("Lỗi khởi tạo HTTP client: {e}"))?;
 
@@ -225,7 +371,6 @@ pub async fn install_plugin_from_url(url: &str, custom_name: Option<&str>) -> Re
     fs::write(&target_path, &bytes)
         .map_err(|e| format!("Không thể lưu file plugin vào đĩa: {e}"))?;
 
-    // Also sync to system plugin folder
     if let Some(sys_dir) = get_system_yt_dlp_plugins_dir() {
         let _ = fs::write(sys_dir.join(&filename), &bytes);
     }
@@ -260,7 +405,6 @@ pub fn toggle_plugin(filename: &str, enable: bool) -> Result<(), String> {
             .map_err(|e| format!("Không thể đổi trạng thái plugin: {e}"))?;
     }
 
-    // Update system plugin directory as well
     if let Some(sys_dir) = get_system_yt_dlp_plugins_dir() {
         let sys_curr = sys_dir.join(filename);
         let sys_target = sys_dir.join(&target_filename);

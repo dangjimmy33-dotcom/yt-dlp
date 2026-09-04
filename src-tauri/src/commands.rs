@@ -240,9 +240,31 @@ pub fn start_drag_window(window: tauri::Window) {
 
 // ================= PLUGIN & CUSTOM EXTRACTOR COMMANDS =================
 use crate::plugins::{
-    delete_plugin, install_plugin_file, install_plugin_from_url, list_plugins,
-    open_plugins_folder as open_plugins_dir_fn, toggle_plugin, CustomPluginInfo,
+    add_custom_domain, delete_plugin, install_plugin_file, install_plugin_from_url,
+    list_plugins, load_custom_domains, open_plugins_folder as open_plugins_dir_fn,
+    remove_custom_domain, toggle_custom_domain, toggle_plugin, CustomDomainRule,
+    CustomPluginInfo,
 };
+
+#[tauri::command]
+pub fn get_custom_domains() -> Result<Vec<CustomDomainRule>, String> {
+    Ok(load_custom_domains())
+}
+
+#[tauri::command]
+pub fn add_custom_site_domain(url: String, name: Option<String>) -> Result<CustomDomainRule, String> {
+    add_custom_domain(&url, name.as_deref())
+}
+
+#[tauri::command]
+pub fn toggle_custom_site_domain(id: String, enabled: bool) -> Result<(), String> {
+    toggle_custom_domain(&id, enabled)
+}
+
+#[tauri::command]
+pub fn remove_custom_site_domain(id: String) -> Result<(), String> {
+    remove_custom_domain(&id)
+}
 
 #[tauri::command]
 pub fn get_custom_plugins() -> Result<Vec<CustomPluginInfo>, String> {
@@ -273,3 +295,4 @@ pub fn remove_custom_plugin(filename: String) -> Result<(), String> {
 pub fn open_plugins_folder() -> Result<(), String> {
     open_plugins_dir_fn()
 }
+

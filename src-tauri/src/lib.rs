@@ -52,7 +52,11 @@ pub fn run() {
             install_plugin_from_web,
             set_plugin_enabled,
             remove_custom_plugin,
-            open_plugins_folder
+            open_plugins_folder,
+            get_custom_domains,
+            add_custom_site_domain,
+            toggle_custom_site_domain,
+            remove_custom_site_domain
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

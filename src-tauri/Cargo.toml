@@ -29,5 +29,6 @@ regex = "1"
 window-vibrancy = "0.5"
 dirs = "5.0"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
+url = "2"
 
 

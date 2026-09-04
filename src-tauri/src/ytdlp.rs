@@ -110,102 +110,7 @@ impl DownloadManager {
     }
 }
 
-pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> Result<MediaInfo, String> {
-    let ytdlp_path = get_ytdlp_path();
-    if !ytdlp_path.exists() {
-        return Err("yt-dlp engine not found. Please click update engine first.".to_string());
-    }
-
-    let mut cmd = Command::new(&ytdlp_path);
-    cmd.arg("--dump-single-json")
-        .arg("--no-warnings")
-        .arg("--flat-playlist")
-        .arg(url);
-
-    let plugins_dir = crate::plugins::get_plugins_dir();
-    if plugins_dir.exists() {
-        cmd.arg("--paths").arg(format!("plugin:{}", plugins_dir.display()));
-    }
-
-    if let Some(browser) = cookies_browser {
-        if !browser.is_empty() && browser != "none" {
-            cmd.arg("--cookies-from-browser").arg(browser);
-        }
-    }
-
-    #[cfg(windows)]
-    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-
-    let output = cmd.output().await.map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
-
-    if !output.status.success() {
-        let err_msg = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("yt-dlp error: {}", err_msg.trim()));
-    }
-
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
-    let json: serde_json::Value = serde_json::from_str(&stdout_str)
-        .map_err(|e| format!("Failed to parse metadata JSON: {}", e))?;
-
-    let is_playlist = json.get("_type").and_then(|v| v.as_str()) == Some("playlist")
-        || json.get("entries").is_some();
-
-    if is_playlist {
-        let mut entries = Vec::new();
-        if let Some(raw_entries) = json.get("entries").and_then(|v| v.as_array()) {
-            for entry in raw_entries {
-                let id = entry.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let title = entry.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled").to_string();
-                let entry_url = entry.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let full_url = if entry_url.starts_with("http") {
-                    entry_url
-                } else if !id.is_empty() {
-                    format!("https://www.youtube.com/watch?v={}", id)
-                } else {
-                    entry_url
-                };
-
-                let thumbnail = entry.get("thumbnail")
-                    .or_else(|| entry.get("thumbnails").and_then(|t| t.as_array()).and_then(|a| a.last()).and_then(|t| t.get("url")))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-
-                entries.push(PlaylistEntry {
-                    id,
-                    title,
-                    url: full_url,
-                    duration: entry.get("duration").and_then(|v| v.as_f64()),
-                    uploader: entry.get("uploader").and_then(|v| v.as_str()).map(String::from),
-                    thumbnail: if thumbnail.is_empty() { None } else { Some(thumbnail) },
-                });
-            }
-        }
-
-        let playlist_title = json.get("title").and_then(|v| v.as_str()).unwrap_or("Playlist").to_string();
-        let uploader = json.get("uploader").or_else(|| json.get("channel")).and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
-        let count = entries.len();
-
-        return Ok(MediaInfo {
-            id: json.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            title: playlist_title,
-            url: url.to_string(),
-            thumbnail: entries.first().and_then(|e| e.thumbnail.clone()).unwrap_or_default(),
-            duration: 0.0,
-            duration_str: format!("{} videos", count),
-            uploader,
-            channel_url: json.get("channel_url").and_then(|v| v.as_str()).map(String::from),
-            view_count: None,
-            description: json.get("description").and_then(|v| v.as_str()).map(String::from),
-            formats: Vec::new(),
-            subtitles: Vec::new(),
-            is_playlist: true,
-            playlist_count: Some(count),
-            entries: Some(entries),
-        });
-    }
-
-    // Single video extraction
+pub fn parse_single_video_json(json: &serde_json::Value, fallback_url: &str) -> Result<MediaInfo, String> {
     let id = json.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let title = json.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled").to_string();
     let duration = json.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
@@ -285,7 +190,7 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
     Ok(MediaInfo {
         id,
         title,
-        url: url.to_string(),
+        url: fallback_url.to_string(),
         thumbnail,
         duration,
         duration_str,
@@ -299,6 +204,237 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
         playlist_count: None,
         entries: None,
     })
+}
+
+async fn sniff_and_extract_webpage(page_url: &str, referer: Option<&str>) -> Result<MediaInfo, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut req = client.get(page_url);
+    if let Some(ref_url) = referer {
+        req = req.header("Referer", ref_url);
+    }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let html = resp.text().await.map_err(|e| e.to_string())?;
+
+    let page_title = if let Some(start) = html.find("<title>") {
+        if let Some(end) = html[start + 7..].find("</title>") {
+            html[start + 7..start + 7 + end].trim().to_string()
+        } else {
+            "Custom Video".to_string()
+        }
+    } else {
+        "Custom Video".to_string()
+    };
+
+    let thumbnail = if let Some(start) = html.find("property=\"og:image\" content=\"") {
+        if let Some(end) = html[start + 28..].find('"') {
+            html[start + 28..start + 28 + end].to_string()
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    let m3u8_regex = regex::Regex::new(r#"https?://[^"'\s<>]+\.m3u8[^"'\s<>]*"#).ok();
+    let mp4_regex = regex::Regex::new(r#"https?://[^"'\s<>]+\.mp4[^"'\s<>]*"#).ok();
+
+    let stream_url = if let Some(ref re) = m3u8_regex {
+        re.find(&html).map(|m| m.as_str().to_string())
+    } else {
+        None
+    }.or_else(|| {
+        if let Some(ref re) = mp4_regex {
+            re.find(&html).map(|m| m.as_str().to_string())
+        } else {
+            None
+        }
+    });
+
+    if let Some(stream) = stream_url {
+        let ytdlp_path = get_ytdlp_path();
+        let mut cmd = Command::new(&ytdlp_path);
+        cmd.arg("--dump-single-json")
+            .arg("--no-warnings")
+            .arg(&stream);
+
+        if let Some(ref_url) = referer {
+            cmd.arg("--referer").arg(ref_url);
+        } else {
+            cmd.arg("--referer").arg(page_url);
+        }
+        cmd.arg("--user-agent")
+            .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+
+        if let Ok(output) = cmd.output().await {
+            if output.status.success() {
+                let stdout_str = String::from_utf8_lossy(&output.stdout);
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout_str) {
+                    if let Ok(mut info) = parse_single_video_json(&json, page_url) {
+                        if !page_title.is_empty() && page_title != "Custom Video" {
+                            info.title = page_title;
+                        }
+                        if !thumbnail.is_empty() {
+                            info.thumbnail = thumbnail;
+                        }
+                        return Ok(info);
+                    }
+                }
+            }
+        }
+
+        return Ok(MediaInfo {
+            id: format!("custom_{}", stream.len()),
+            title: page_title,
+            url: stream,
+            thumbnail,
+            duration: 0.0,
+            duration_str: "--:--".to_string(),
+            uploader: page_url.to_string(),
+            channel_url: None,
+            view_count: None,
+            description: Some("Tự động bóc tách luồng trực tiếp từ trang web".to_string()),
+            formats: vec![
+                VideoFormat {
+                    format_id: "auto".to_string(),
+                    ext: "mp4".to_string(),
+                    resolution: Some("HD / Auto".to_string()),
+                    width: None,
+                    height: Some(1080),
+                    fps: None,
+                    filesize: None,
+                    filesize_approx: None,
+                    vcodec: Some("auto".to_string()),
+                    acodec: Some("auto".to_string()),
+                    format_note: Some("Luồng video HLS / Direct".to_string()),
+                    is_video: true,
+                    is_audio: true,
+                }
+            ],
+            subtitles: Vec::new(),
+            is_playlist: false,
+            playlist_count: None,
+            entries: None,
+        });
+    }
+
+    Err("Không thể bóc tách luồng video từ trang web này".to_string())
+}
+
+pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> Result<MediaInfo, String> {
+    let ytdlp_path = get_ytdlp_path();
+    if !ytdlp_path.exists() {
+        return Err("yt-dlp engine not found. Please click update engine first.".to_string());
+    }
+
+    let referer = crate::plugins::get_referer_for_url(url);
+
+    let mut cmd = Command::new(&ytdlp_path);
+    cmd.arg("--dump-single-json")
+        .arg("--no-warnings")
+        .arg("--flat-playlist")
+        .arg(url);
+
+    let plugins_dir = crate::plugins::get_plugins_dir();
+    if plugins_dir.exists() {
+        cmd.arg("--paths").arg(format!("plugin:{}", plugins_dir.display()));
+    }
+
+    if let Some(ref ref_url) = referer {
+        cmd.arg("--referer").arg(ref_url);
+    }
+    cmd.arg("--user-agent")
+        .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+
+    if let Some(browser) = cookies_browser {
+        if !browser.is_empty() && browser != "none" {
+            cmd.arg("--cookies-from-browser").arg(browser);
+        }
+    }
+
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+
+    let output = cmd.output().await.map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+
+    if !output.status.success() {
+        if let Ok(sniffed) = sniff_and_extract_webpage(url, referer.as_deref()).await {
+            return Ok(sniffed);
+        }
+
+        let err_msg = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("yt-dlp error: {}", err_msg.trim()));
+    }
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout_str)
+        .map_err(|e| format!("Failed to parse metadata JSON: {}", e))?;
+
+    let is_playlist = json.get("_type").and_then(|v| v.as_str()) == Some("playlist")
+        || json.get("entries").is_some();
+
+    if is_playlist {
+        let mut entries = Vec::new();
+        if let Some(raw_entries) = json.get("entries").and_then(|v| v.as_array()) {
+            for entry in raw_entries {
+                let id = entry.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let title = entry.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled").to_string();
+                let entry_url = entry.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let full_url = if entry_url.starts_with("http") {
+                    entry_url
+                } else if !id.is_empty() {
+                    format!("https://www.youtube.com/watch?v={}", id)
+                } else {
+                    entry_url
+                };
+
+                let thumbnail = entry.get("thumbnail")
+                    .or_else(|| entry.get("thumbnails").and_then(|t| t.as_array()).and_then(|a| a.last()).and_then(|t| t.get("url")))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                entries.push(PlaylistEntry {
+                    id,
+                    title,
+                    url: full_url,
+                    duration: entry.get("duration").and_then(|v| v.as_f64()),
+                    uploader: entry.get("uploader").and_then(|v| v.as_str()).map(String::from),
+                    thumbnail: if thumbnail.is_empty() { None } else { Some(thumbnail) },
+                });
+            }
+        }
+
+        let playlist_title = json.get("title").and_then(|v| v.as_str()).unwrap_or("Playlist").to_string();
+        let uploader = json.get("uploader").or_else(|| json.get("channel")).and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
+        let count = entries.len();
+
+        return Ok(MediaInfo {
+            id: json.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            title: playlist_title,
+            url: url.to_string(),
+            thumbnail: entries.first().and_then(|e| e.thumbnail.clone()).unwrap_or_default(),
+            duration: 0.0,
+            duration_str: format!("{} videos", count),
+            uploader,
+            channel_url: json.get("channel_url").and_then(|v| v.as_str()).map(String::from),
+            view_count: None,
+            description: json.get("description").and_then(|v| v.as_str()).map(String::from),
+            formats: Vec::new(),
+            subtitles: Vec::new(),
+            is_playlist: true,
+            playlist_count: Some(count),
+            entries: Some(entries),
+        });
+    }
+
+    parse_single_video_json(&json, url)
 }
 
 pub async fn execute_download(
@@ -330,6 +466,13 @@ pub async fn execute_download(
         cmd.arg("--paths").arg(format!("plugin:{}", plugins_dir.display()));
     }
 
+    let referer = crate::plugins::get_referer_for_url(&req.url);
+    if let Some(ref ref_url) = referer {
+        cmd.arg("--referer").arg(ref_url);
+    }
+    cmd.arg("--user-agent")
+        .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+
     cmd.arg("--newline")
         .arg("--progress-template")
         .arg("FLOWDL_PROGRESS|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._total_bytes_estimate_str)s|%(progress.status)s")
@@ -345,8 +488,6 @@ pub async fn execute_download(
     #[cfg(windows)]
     cmd.arg("--windows-filenames");
 
-    // Keep the output template as a filename only. The destination directory is
-    // supplied separately via -P, which avoids Windows path/template edge cases.
     let filename_template = if let Some(ref custom_name) = req.custom_filename {
         if !custom_name.trim().is_empty() {
             format!("{}.%(ext)s", custom_name.trim())
@@ -358,9 +499,6 @@ pub async fn execute_download(
     };
     cmd.arg("-o").arg(filename_template);
 
-    // Format & Quality selection. These selections intentionally use separate
-    // bestvideo+bestaudio streams; FFmpeg is checked above so merging cannot
-    // mysteriously fail at the end of the download.
     if req.download_type == "audio" {
         cmd.arg("-x");
         let audio_fmt = req.audio_format.as_deref().unwrap_or("mp3");
@@ -484,8 +622,6 @@ pub async fn execute_download(
         }
     });
 
-    // yt-dlp sends useful diagnostics to stderr. Always drain it so the pipe
-    // cannot fill and deadlock the child, and retain the tail for an exact UI error.
     let errors_for_reader = last_errors.clone();
     let stderr_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stderr).lines();
@@ -509,8 +645,6 @@ pub async fn execute_download(
     let _ = stdout_task.await;
     let _ = stderr_task.await;
 
-    // If the task was removed before the process finished, cancel_download did it.
-    // Do not turn a user cancellation into a red error card afterwards.
     let was_active = {
         let mut map = active_map.lock().await;
         map.remove(&task_id).is_some()

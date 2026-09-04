@@ -127,6 +127,17 @@ export interface EngineStatus {
   ffmpeg_path: string;
 }
 
+export interface CustomDomainRule {
+  id: string;
+  domain: string;
+  name: string;
+  original_url: string;
+  referer: string;
+  is_enabled: boolean;
+  added_at: string;
+  note?: string;
+}
+
 export interface CustomPluginInfo {
   id: string;
   name: string;
