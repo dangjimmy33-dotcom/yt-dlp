@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod engine_manager;
+pub mod plugins;
 pub mod ytdlp;
 
 use commands::*;
@@ -45,7 +46,13 @@ pub fn run() {
             minimize_window,
             toggle_maximize_window,
             close_window,
-            start_drag_window
+            start_drag_window,
+            get_custom_plugins,
+            install_plugin_from_path,
+            install_plugin_from_web,
+            set_plugin_enabled,
+            remove_custom_plugin,
+            open_plugins_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

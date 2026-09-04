@@ -21,6 +21,7 @@ import {
   Radio,
   Check,
   ChevronDown,
+  Boxes,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -30,6 +31,7 @@ interface SettingsModalProps {
   settings: AppSettings;
   onSaveSettings: (settings: AppSettings) => void;
   onSelectFolder?: () => void;
+  onOpenPlugins?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -37,6 +39,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   settings,
   onSaveSettings,
+  onOpenPlugins,
 }) => {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
   const [isBrowserDropdownOpen, setIsBrowserDropdownOpen] = useState(false);
@@ -380,6 +383,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Custom Plugins & Websites Section */}
+          {onOpenPlugins && (
+            <div className="space-y-2.5 pt-2 border-t border-white/[0.06]">
+              <span className="text-xs font-bold text-slate-300 block flex items-center gap-1.5">
+                <Boxes className="w-3.5 h-3.5 text-purple-400" />
+                <span>Mở Rộng & Website Tùy Chỉnh</span>
+              </span>
+
+              <div className="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 flex items-center justify-between text-xs">
+                <div>
+                  <span className="font-semibold text-slate-200 block">Plugins / Extractor Riêng</span>
+                  <span className="text-[11px] text-slate-400 block">Thêm file .py hoặc tải plugin để bóc tách website mới</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenPlugins();
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-200 text-xs font-bold transition-all cursor-pointer"
+                >
+                  <Boxes className="w-3.5 h-3.5" />
+                  <span>Quản lý</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

@@ -237,3 +237,39 @@ pub fn close_window(window: tauri::Window) {
 pub fn start_drag_window(window: tauri::Window) {
     let _ = window.start_dragging();
 }
+
+// ================= PLUGIN & CUSTOM EXTRACTOR COMMANDS =================
+use crate::plugins::{
+    delete_plugin, install_plugin_file, install_plugin_from_url, list_plugins,
+    open_plugins_folder as open_plugins_dir_fn, toggle_plugin, CustomPluginInfo,
+};
+
+#[tauri::command]
+pub fn get_custom_plugins() -> Result<Vec<CustomPluginInfo>, String> {
+    Ok(list_plugins())
+}
+
+#[tauri::command]
+pub fn install_plugin_from_path(path: String) -> Result<CustomPluginInfo, String> {
+    install_plugin_file(std::path::Path::new(&path))
+}
+
+#[tauri::command]
+pub async fn install_plugin_from_web(url: String, name: Option<String>) -> Result<CustomPluginInfo, String> {
+    install_plugin_from_url(&url, name.as_deref()).await
+}
+
+#[tauri::command]
+pub fn set_plugin_enabled(filename: String, enabled: bool) -> Result<(), String> {
+    toggle_plugin(&filename, enabled)
+}
+
+#[tauri::command]
+pub fn remove_custom_plugin(filename: String) -> Result<(), String> {
+    delete_plugin(&filename)
+}
+
+#[tauri::command]
+pub fn open_plugins_folder() -> Result<(), String> {
+    open_plugins_dir_fn()
+}

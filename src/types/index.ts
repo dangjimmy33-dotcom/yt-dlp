@@ -127,4 +127,16 @@ export interface EngineStatus {
   ffmpeg_path: string;
 }
 
+export interface CustomPluginInfo {
+  id: string;
+  name: string;
+  filename: string;
+  path: string;
+  size: number;
+  size_str: string;
+  modified_at: string;
+  is_enabled: boolean;
+  description?: string;
+}
+
 type f64 = number;

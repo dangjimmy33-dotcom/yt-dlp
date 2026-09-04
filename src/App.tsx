@@ -25,6 +25,7 @@ import { PlaylistModal } from "./components/PlaylistModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { EngineStatusModal } from "./components/EngineStatusModal";
 import { UpdateNotificationModal } from "./components/UpdateNotificationModal";
+import { PluginManagerModal } from "./components/PluginManagerModal";
 
 import { playNotificationBell, playSuccessChime } from "./utils/sound";
 import { checkForGithubUpdates, GithubReleaseInfo } from "./utils/updater";
@@ -46,6 +47,7 @@ import {
   Video,
   Music,
   Search,
+  Boxes,
 } from "lucide-react";
 
 export default function App() {
@@ -116,6 +118,7 @@ export default function App() {
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isEngineModalOpen, setIsEngineModalOpen] = useState<boolean>(false);
+  const [isPluginModalOpen, setIsPluginModalOpen] = useState<boolean>(false);
 
   // Speed data for real-time graph
   const [speedData, setSpeedData] = useState<{ time: string; speed: number }[]>([]);
@@ -647,6 +650,15 @@ export default function App() {
                 </span>
               )}
             </button>
+
+            <button
+              onClick={() => setIsPluginModalOpen(true)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-white/[0.04] transition-all cursor-pointer"
+              title="Quản lý plugins và thêm trang web tùy chỉnh"
+            >
+              <Boxes className="w-3.5 h-3.5 text-purple-400" />
+              <span>Thêm Web</span>
+            </button>
           </div>
 
           <div className="flex items-center gap-1.5 min-w-0">
@@ -915,6 +927,7 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         onSaveSettings={handleSaveSettings}
+        onOpenPlugins={() => setIsPluginModalOpen(true)}
       />
 
       <EngineStatusModal
@@ -932,6 +945,11 @@ export default function App() {
         onClose={() => setIsUpdateModalOpen(false)}
         releaseInfo={githubRelease}
         onOpenUrl={handleOpenUrl}
+      />
+
+      <PluginManagerModal
+        isOpen={isPluginModalOpen}
+        onClose={() => setIsPluginModalOpen(false)}
       />
     </div>
   );

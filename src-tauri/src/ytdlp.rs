@@ -122,6 +122,11 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
         .arg("--flat-playlist")
         .arg(url);
 
+    let plugins_dir = crate::plugins::get_plugins_dir();
+    if plugins_dir.exists() {
+        cmd.arg("--paths").arg(format!("plugin:{}", plugins_dir.display()));
+    }
+
     if let Some(browser) = cookies_browser {
         if !browser.is_empty() && browser != "none" {
             cmd.arg("--cookies-from-browser").arg(browser);
@@ -319,6 +324,11 @@ pub async fn execute_download(
         .map_err(|e| format!("Không thể tạo/mở thư mục tải '{}': {e}", req.output_dir))?;
 
     let mut cmd = Command::new(&ytdlp_path);
+
+    let plugins_dir = crate::plugins::get_plugins_dir();
+    if plugins_dir.exists() {
+        cmd.arg("--paths").arg(format!("plugin:{}", plugins_dir.display()));
+    }
 
     cmd.arg("--newline")
         .arg("--progress-template")
