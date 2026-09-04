@@ -348,6 +348,44 @@ fn browser_capture_required_error() -> String {
     "FLOWDL_BROWSER_CAPTURE_REQUIRED|Trang web từ chối truy cập trực tiếp từ yt-dlp (HTTP 403). Đã chuyển sang Bắt Link Web; hãy phát video trong cửa sổ trình duyệt để Studio nhận luồng mà trang thực sự tải.".to_string()
 }
 
+fn parse_range_or_limit(s: &str, default_limit: usize) -> (Option<usize>, Option<usize>) {
+    let s = s.trim();
+    if s.is_empty() {
+        return (None, Some(default_limit));
+    }
+    if let Some((start_s, end_s)) = s.split_once('-') {
+        let start = start_s.parse::<usize>().ok();
+        let end = end_s.parse::<usize>().ok();
+        (start, end)
+    } else if let Ok(n) = s.parse::<usize>() {
+        (None, Some(n))
+    } else {
+        (None, Some(default_limit))
+    }
+}
+
+pub async fn list_extractors() -> Result<Vec<String>, String> {
+    let ytdlp_path = get_ytdlp_path();
+    if !ytdlp_path.exists() {
+        return Err("yt-dlp engine not found".to_string());
+    }
+    let mut cmd = Command::new(&ytdlp_path);
+    cmd.arg("--list-extractors");
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000);
+
+    let output = cmd.output().await.map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut list = Vec::new();
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() && !trimmed.starts_with('#') {
+            list.push(trimmed.to_string());
+        }
+    }
+    Ok(list)
+}
+
 pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> Result<MediaInfo, String> {
     let ytdlp_path = get_ytdlp_path();
     if !ytdlp_path.exists() {
@@ -355,37 +393,49 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
     }
 
     let trimmed = url.trim();
-    let is_playlist_search = trimmed.starts_with("ytplaylist:") || trimmed.starts_with("playlistsearch:");
-    let is_channel_search = trimmed.starts_with("ytchannel:") || trimmed.starts_with("channelsearch:");
+    let is_playlist_search = trimmed.starts_with("ytplaylist") || trimmed.starts_with("playlistsearch");
+    let is_channel_search = trimmed.starts_with("ytchannel") || trimmed.starts_with("channelsearch");
     let is_raw_ytsearch = trimmed.starts_with("ytsearch");
     let is_http = trimmed.starts_with("http://") || trimmed.starts_with("https://");
 
     let is_search = !is_http || is_playlist_search || is_channel_search || is_raw_ytsearch || trimmed.contains("&sp=EgIQAw") || trimmed.contains("&sp=EgIQAg");
 
-    let (query_target, display_search_title) = if is_playlist_search {
-        let q = trimmed.split_once(':').map(|x| x.1).unwrap_or(trimmed).trim();
-        let encoded: String = url::form_urlencoded::byte_serialize(q.as_bytes()).collect();
+    let (query_target, display_search_title, p_start, p_end) = if is_playlist_search {
+        let (prefix, q) = trimmed.split_once(':').unwrap_or((trimmed, ""));
+        let num_part = prefix.trim_start_matches("ytplaylist").trim_start_matches("playlistsearch");
+        let (start, end) = parse_range_or_limit(num_part, 30);
+        let encoded: String = url::form_urlencoded::byte_serialize(q.trim().as_bytes()).collect();
         (
             format!("https://www.youtube.com/results?search_query={}&sp=EgIQAw%253D%253D", encoded),
-            format!("Danh sách phát cho: \"{}\"", q)
+            format!("Danh sách phát cho: \"{}\"", q.trim()),
+            start,
+            end,
         )
     } else if is_channel_search {
-        let q = trimmed.split_once(':').map(|x| x.1).unwrap_or(trimmed).trim();
-        let encoded: String = url::form_urlencoded::byte_serialize(q.as_bytes()).collect();
+        let (prefix, q) = trimmed.split_once(':').unwrap_or((trimmed, ""));
+        let num_part = prefix.trim_start_matches("ytchannel").trim_start_matches("channelsearch");
+        let (start, end) = parse_range_or_limit(num_part, 30);
+        let encoded: String = url::form_urlencoded::byte_serialize(q.trim().as_bytes()).collect();
         (
             format!("https://www.youtube.com/results?search_query={}&sp=EgIQAg%253D%253D", encoded),
-            format!("Kênh YouTube cho: \"{}\"", q)
+            format!("Kênh YouTube cho: \"{}\"", q.trim()),
+            start,
+            end,
         )
     } else if is_raw_ytsearch {
         let q = trimmed.split_once(':').map(|x| x.1).unwrap_or(trimmed).trim();
-        (trimmed.to_string(), format!("Kết quả tìm kiếm video: \"{}\"", q))
+        (trimmed.to_string(), format!("Kết quả tìm kiếm video: \"{}\"", q), None, None)
     } else if !is_http {
         (
-            format!("ytsearch50:{}", trimmed),
-            format!("Kết quả tìm kiếm: \"{}\"", trimmed)
+            format!("ytsearch30:{}", trimmed),
+            format!("Kết quả tìm kiếm: \"{}\"", trimmed),
+            None,
+            None,
         )
+    } else if trimmed.contains("&sp=EgIQAw") || trimmed.contains("&sp=EgIQAg") {
+        (trimmed.to_string(), String::new(), None, Some(30))
     } else {
-        (trimmed.to_string(), String::new())
+        (trimmed.to_string(), String::new(), None, None)
     };
 
     let referer = if !is_search {
@@ -401,8 +451,16 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
         .arg("--js-runtimes")
         .arg("node")
         .arg("--extractor-args")
-        .arg("youtube:player_client=android,web,ios")
-        .arg(&query_target);
+        .arg("youtube:player_client=android,web,ios");
+
+    if let Some(start) = p_start {
+        cmd.arg("--playlist-start").arg(start.to_string());
+    }
+    if let Some(end) = p_end {
+        cmd.arg("--playlist-end").arg(end.to_string());
+    }
+
+    cmd.arg(&query_target);
 
     let plugins_dir = crate::plugins::get_plugins_dir();
     if plugins_dir.exists() {

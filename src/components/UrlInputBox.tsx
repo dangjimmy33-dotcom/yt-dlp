@@ -22,6 +22,7 @@ interface UrlInputBoxProps {
   onAnalyze: (urlToAnalyze?: string) => void;
   onQuickDownload?: (url: string, type: 'video' | 'audio', qualityOrFormat: string, audioQuality?: string) => void;
   onOpenBatchModal?: () => void;
+  onOpenSupportedSites?: () => void;
   isLoading: boolean;
 }
 
@@ -31,11 +32,12 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
   onAnalyze,
   onQuickDownload,
   onOpenBatchModal,
+  onOpenSupportedSites,
   isLoading,
 }) => {
   const [isFocused, setIsFocused] = useState(false);
   const [searchMode, setSearchMode] = useState<'video' | 'playlist' | 'channel'>('video');
-  const [resultLimit, setResultLimit] = useState<number>(50);
+  const [resultLimit, setResultLimit] = useState<number>(30);
 
   const handlePaste = async () => {
     try {
@@ -66,11 +68,11 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
       return;
     }
 
-    // Smart keyword search routing
+    // Smart keyword search routing with fast limit
     if (searchMode === "playlist") {
-      onAnalyze(`ytplaylist:${raw}`);
+      onAnalyze(`ytplaylist${resultLimit}:${raw}`);
     } else if (searchMode === "channel") {
-      onAnalyze(`ytchannel:${raw}`);
+      onAnalyze(`ytchannel${resultLimit}:${raw}`);
     } else {
       onAnalyze(`ytsearch${resultLimit}:${raw}`);
     }
@@ -337,9 +339,15 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
             <span>{p.name}</span>
           </span>
         ))}
-        <span className="shrink-0 text-slate-400 font-medium px-1.5">
-          + 1000+ website khác
-        </span>
+        <button
+          type="button"
+          onClick={onOpenSupportedSites}
+          className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-indigo-500/20 text-indigo-300 hover:text-indigo-200 border border-white/[0.08] hover:border-indigo-500/30 transition-all font-semibold cursor-pointer"
+          title="Xem chi tiết hơn 1800+ website và dịch vụ truyền thông được hỗ trợ"
+        >
+          <Sparkles className="w-3 h-3 text-amber-400" />
+          <span>+ 1800+ website khác</span>
+        </button>
       </motion.div>
     </div>
   );

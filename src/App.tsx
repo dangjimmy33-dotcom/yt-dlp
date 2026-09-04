@@ -29,6 +29,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { EngineStatusModal } from "./components/EngineStatusModal";
 import { UpdateNotificationModal } from "./components/UpdateNotificationModal";
 import { PluginManagerModal } from "./components/PluginManagerModal";
+import { SupportedSitesModal } from "./components/SupportedSitesModal";
 
 import { playNotificationBell, playSuccessChime } from "./utils/sound";
 import { checkForGithubUpdates, GithubReleaseInfo } from "./utils/updater";
@@ -128,6 +129,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isEngineModalOpen, setIsEngineModalOpen] = useState<boolean>(false);
   const [isPluginModalOpen, setIsPluginModalOpen] = useState<boolean>(false);
+  const [isSupportedSitesOpen, setIsSupportedSitesOpen] = useState<boolean>(false);
 
   // Speed data for real-time graph
   const [speedData, setSpeedData] = useState<{ time: string; speed: number }[]>([]);
@@ -1028,6 +1030,7 @@ export default function App() {
                 onAnalyze={handleAnalyze}
                 onQuickDownload={handleQuickDownload}
                 onOpenBatchModal={() => setIsBatchModalOpen(true)}
+                onOpenSupportedSites={() => setIsSupportedSitesOpen(true)}
                 isLoading={isLoading}
               />
 
@@ -1159,6 +1162,11 @@ export default function App() {
       <PluginManagerModal
         isOpen={isPluginModalOpen}
         onClose={() => setIsPluginModalOpen(false)}
+      />
+
+      <SupportedSitesModal
+        isOpen={isSupportedSitesOpen}
+        onClose={() => setIsSupportedSitesOpen(false)}
       />
     </div>
   );

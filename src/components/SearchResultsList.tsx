@@ -1,9 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { MediaInfo, PlaylistEntry, AppSettings, DownloadRequest } from '../types';
 import {
   CheckSquare,
   Square,
-  Layers,
   Search,
   Download,
   Clock,
@@ -17,11 +16,16 @@ import {
   ChevronUp,
   Sparkles,
   Check,
-  Disc,
   Zap,
-  Scissors,
-  ExternalLink,
   ListVideo,
+  LayoutGrid,
+  List,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  CheckCircle2,
+  Play,
+  RotateCcw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -47,15 +51,36 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
   onSearchMore,
 }) => {
   const allEntries = useMemo(() => media.entries || [], [media.entries]);
+
+  // Selected entry IDs set
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
     return new Set(allEntries.map((e) => e.id));
   });
 
   const [filterText, setFilterText] = useState<string>('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'video' | 'playlist' | 'channel'>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [isGlobalSettingExpanded, setIsGlobalSettingExpanded] = useState<boolean>(false);
 
-  // Global Configuration that can be applied to all or used as fallback
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(24);
+
+  // Range selector
+  const [fromEp, setFromEp] = useState<string>('1');
+  const [toEp, setToEp] = useState<string>(String(allEntries.length || 1));
+
+  // Sync state whenever media changes
+  useEffect(() => {
+    setSelectedIds(new Set(allEntries.map((e) => e.id)));
+    setFromEp('1');
+    setToEp(String(allEntries.length || 1));
+    setCurrentPage(1);
+    setExpandedItemId(null);
+  }, [media.id, media.url, allEntries]);
+
+  // Global format configuration
   const [globalConfig, setGlobalConfig] = useState<FullFormatConfig>({
     downloadType: 'video',
     quality: settings.defaultVideoQuality || '1080p',
@@ -74,44 +99,70 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
   });
 
   // Per-item override configs
-  const [itemConfigs, setItemConfigs] = useState<Record<string, FullFormatConfig>>(() => {
-    const initial: Record<string, FullFormatConfig> = {};
-    allEntries.forEach((e) => {
-      initial[e.id] = {
-        downloadType: 'video',
-        quality: settings.defaultVideoQuality || '1080p',
-        videoContainer: 'mp4',
-        videoCodec: 'auto',
-        audioFormat: settings.defaultAudioFormat || 'mp3',
-        audioQuality: settings.defaultAudioQuality || '320K',
-        audioNormalize: true,
-        customFilename: '',
-        trimStart: '',
-        trimEnd: '',
-        embedSubtitles: settings.embedSubtitles || false,
-        embedThumbnail: settings.embedThumbnail ?? true,
-        embedMetadata: settings.embedMetadata ?? true,
-        sponsorblock: settings.sponsorBlock || false,
-      };
-    });
-    return initial;
-  });
+  const [itemConfigs, setItemConfigs] = useState<Record<string, FullFormatConfig>>({});
 
-  const [fromEp, setFromEp] = useState<string>('1');
-  const [toEp, setToEp] = useState<string>(String(allEntries.length || 1));
+  // Format seconds to mm:ss or hh:mm:ss
+  const formatDuration = (secs?: number): string => {
+    if (!secs || isNaN(secs) || secs <= 0) return '';
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = Math.floor(secs % 60);
+    if (h > 0) {
+      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
 
+  // Filtered entries
   const filteredEntries = useMemo(() => {
-    if (!filterText.trim()) return allEntries;
-    const lower = filterText.toLowerCase();
-    return allEntries.filter(
-      (e) =>
-        e.title.toLowerCase().includes(lower) ||
-        (e.uploader && e.uploader.toLowerCase().includes(lower))
-    );
-  }, [allEntries, filterText]);
+    return allEntries.filter((e) => {
+      // Search text filter
+      if (filterText.trim()) {
+        const lower = filterText.toLowerCase();
+        const matchesTitle = e.title.toLowerCase().includes(lower);
+        const matchesUploader = e.uploader && e.uploader.toLowerCase().includes(lower);
+        if (!matchesTitle && !matchesUploader) return false;
+      }
 
-  const selectedCount = selectedIds.size;
+      // Type tab filter
+      if (typeFilter === 'video') {
+        const isPl = e.is_playlist || e.entry_type === 'playlist' || e.url.includes('/playlist?list=');
+        const isCh = e.entry_type === 'channel' || e.url.includes('/channel/') || e.url.includes('/@');
+        if (isPl || isCh) return false;
+      } else if (typeFilter === 'playlist') {
+        const isPl = e.is_playlist || e.entry_type === 'playlist' || e.url.includes('/playlist?list=');
+        if (!isPl) return false;
+      } else if (typeFilter === 'channel') {
+        const isCh = e.entry_type === 'channel' || e.url.includes('/channel/') || e.url.includes('/@');
+        if (!isCh) return false;
+      }
+
+      return true;
+    });
+  }, [allEntries, filterText, typeFilter]);
+
+  // Paginated slice
+  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / pageSize));
+  const paginatedEntries = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredEntries.slice(start, start + pageSize);
+  }, [filteredEntries, currentPage, pageSize]);
+
+  // Counts
+  const selectedCount = useMemo(() => {
+    let count = 0;
+    allEntries.forEach((e) => {
+      if (selectedIds.has(e.id)) count++;
+    });
+    return count;
+  }, [allEntries, selectedIds]);
+
   const isAllSelected = allEntries.length > 0 && selectedCount === allEntries.length;
+
+  const isCurrentPageAllSelected = useMemo(() => {
+    if (paginatedEntries.length === 0) return false;
+    return paginatedEntries.every((e) => selectedIds.has(e.id));
+  }, [paginatedEntries, selectedIds]);
 
   // Toggle selection
   const toggleSelect = (id: string) => {
@@ -126,12 +177,26 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
     });
   };
 
-  const handleSelectAll = (select: boolean) => {
+  const handleSelectAllTotal = (select: boolean) => {
     if (select) {
       setSelectedIds(new Set(allEntries.map((e) => e.id)));
+      toast.success(`Đã chọn toàn bộ ${allEntries.length} mục`);
     } else {
       setSelectedIds(new Set());
+      toast.info('Đã bỏ chọn toàn bộ');
     }
+  };
+
+  const handleToggleCurrentPage = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (isCurrentPageAllSelected) {
+        paginatedEntries.forEach((e) => next.delete(e.id));
+      } else {
+        paginatedEntries.forEach((e) => next.add(e.id));
+      }
+      return next;
+    });
   };
 
   const handleApplyRange = () => {
@@ -145,7 +210,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
       }
     });
     setSelectedIds(newSet);
-    toast.success(`Đã chọn ${newSet.size} video từ tập ${start} đến ${end}`);
+    toast.success(`Đã chọn ${newSet.size} mục từ vị trí ${start} đến ${end}`);
   };
 
   // Apply global config to ALL items
@@ -160,35 +225,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
       };
     });
     setItemConfigs(updated);
-    toast.success('Đã đồng bộ toàn bộ cài đặt chung (Format, Độ phân giải, Codec, Audio) cho tất cả video!');
-  };
-
-  // Quick preset helpers
-  const handleSetAllPreset = (type: 'video' | 'audio', qualityOrFormat: string) => {
-    const updated: Record<string, FullFormatConfig> = {};
-    allEntries.forEach((e) => {
-      const current = itemConfigs[e.id] || globalConfig;
-      updated[e.id] = {
-        ...current,
-        downloadType: type,
-        quality: type === 'video' ? qualityOrFormat : current.quality,
-        audioFormat: type === 'audio' ? qualityOrFormat : current.audioFormat,
-      };
-    });
-    setItemConfigs(updated);
-    toast.success(
-      type === 'video'
-        ? `Đã chuyển toàn bộ ${allEntries.length} video sang định dạng Video ${qualityOrFormat}!`
-        : `Đã chuyển toàn bộ ${allEntries.length} video sang định dạng Âm thanh ${qualityOrFormat.toUpperCase()} 320k!`
-    );
-  };
-
-  // Update a single item's config
-  const updateItemConfig = (id: string, newConfig: FullFormatConfig) => {
-    setItemConfigs((prev) => ({
-      ...prev,
-      [id]: newConfig,
-    }));
+    toast.success('Đã áp dụng cấu hình chung cho tất cả các video!');
   };
 
   // Build DownloadRequest for an entry
@@ -198,17 +235,15 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
     return {
       id: `task-${Date.now()}-${entry.id}-${Math.random().toString(36).slice(2, 6)}`,
       url: entry.url,
-      title: isAudio
-        ? `[Audio ${config.audioFormat.toUpperCase()}] ${displayTitle}`
-        : `[Video ${config.quality}] ${displayTitle}`,
+      title: displayTitle,
       download_type: config.downloadType,
       quality: isAudio ? 'best' : config.quality,
       video_container: isAudio ? undefined : config.videoContainer,
-      video_codec: isAudio || config.videoCodec === 'auto' ? undefined : config.videoCodec,
+      video_codec: isAudio ? undefined : config.videoCodec,
       audio_format: isAudio ? config.audioFormat : undefined,
       audio_quality: isAudio ? config.audioQuality : undefined,
       audio_normalize: isAudio ? config.audioNormalize : undefined,
-      output_dir: settings.defaultDownloadDir,
+      output_dir: settings.defaultDownloadDir || '',
       custom_filename: config.customFilename?.trim() || undefined,
       trim_start: config.trimStart?.trim() || undefined,
       trim_end: config.trimEnd?.trim() || undefined,
@@ -220,101 +255,71 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
     };
   };
 
-  // 1-Click download 1 single item as Video
-  const handleQuickDownloadVideoSingle = (entry: PlaylistEntry) => {
-    if (!settings.defaultDownloadDir?.trim()) {
-      toast.error('Chưa chọn thư mục lưu video. Hãy chọn nơi lưu trước.');
-      onSelectFolder();
-      return;
-    }
+  // Single Quick Downloads
+  const handleDownloadSingleVideo = (entry: PlaylistEntry) => {
     const cfg = itemConfigs[entry.id] || globalConfig;
-    const videoCfg: FullFormatConfig = { ...cfg, downloadType: 'video' };
-    const req = createDownloadRequest(entry, videoCfg);
+    const req = createDownloadRequest(entry, { ...cfg, downloadType: 'video' });
     onStartSingleDownload(req);
-    toast.success(`Bắt đầu tải Video: ${entry.title}`);
+    toast.success(`Bắt đầu tải video: ${entry.title}`);
   };
 
-  // 1-Click download 1 single item as Audio
-  const handleQuickDownloadAudioSingle = (entry: PlaylistEntry) => {
-    if (!settings.defaultDownloadDir?.trim()) {
-      toast.error('Chưa chọn thư mục lưu video. Hãy chọn nơi lưu trước.');
-      onSelectFolder();
-      return;
-    }
+  const handleDownloadSingleAudio = (entry: PlaylistEntry) => {
     const cfg = itemConfigs[entry.id] || globalConfig;
-    const audioCfg: FullFormatConfig = { ...cfg, downloadType: 'audio', audioFormat: cfg.audioFormat || 'mp3' };
-    const req = createDownloadRequest(entry, audioCfg);
-    onStartSingleDownload(req);
-    toast.success(`Bắt đầu tách nhạc MP3 320k: ${entry.title}`);
-  };
-
-  // Download all selected items respecting their individual configs
-  const handleStartBulkDownloadCustom = () => {
-    if (selectedCount === 0) {
-      toast.error('Vui lòng chọn ít nhất 1 video để tải.');
-      return;
-    }
-    if (!settings.defaultDownloadDir?.trim()) {
-      toast.error('Chưa chọn thư mục lưu video. Hãy chọn nơi lưu trước.');
-      onSelectFolder();
-      return;
-    }
-    const selectedEntries = allEntries.filter((e) => selectedIds.has(e.id));
-    const requests = selectedEntries.map((entry) => {
-      const cfg = itemConfigs[entry.id] || globalConfig;
-      return createDownloadRequest(entry, cfg);
+    const req = createDownloadRequest(entry, {
+      ...cfg,
+      downloadType: 'audio',
+      audioFormat: 'mp3',
+      audioQuality: '320K',
     });
-    onStartCustomBatch(requests);
-    toast.success(`Đã thêm ${requests.length} video vào hàng đợi tải theo cấu hình riêng!`);
+    onStartSingleDownload(req);
+    toast.success(`Bắt đầu tách nhạc MP3: ${entry.title}`);
   };
 
-  // 1-Click Batch Download all selected as Video
+  // Bulk Actions
   const handleStartBulkVideo = () => {
-    if (selectedCount === 0) {
-      toast.error('Vui lòng chọn ít nhất 1 video để tải.');
+    const selected = allEntries.filter((e) => selectedIds.has(e.id));
+    if (selected.length === 0) {
+      toast.error('Chưa chọn video nào!');
       return;
     }
-    if (!settings.defaultDownloadDir?.trim()) {
-      toast.error('Chưa chọn thư mục lưu video. Hãy chọn nơi lưu trước.');
-      onSelectFolder();
-      return;
-    }
-    const selectedEntries = allEntries.filter((e) => selectedIds.has(e.id));
-    const requests = selectedEntries.map((entry) => {
-      const cfg = itemConfigs[entry.id] || globalConfig;
-      return createDownloadRequest(entry, { ...cfg, downloadType: 'video', quality: globalConfig.quality || '1080p' });
+    const requests = selected.map((e) => {
+      const cfg = itemConfigs[e.id] || globalConfig;
+      return createDownloadRequest(e, { ...cfg, downloadType: 'video' });
     });
     onStartCustomBatch(requests);
-    toast.success(`Đã thêm ${requests.length} video (${globalConfig.quality}) vào hàng đợi tải!`);
   };
 
-  // 1-Click Batch Download all selected as Audio (MP3 320k)
   const handleStartBulkAudio = () => {
-    if (selectedCount === 0) {
-      toast.error('Vui lòng chọn ít nhất 1 video để tải.');
+    const selected = allEntries.filter((e) => selectedIds.has(e.id));
+    if (selected.length === 0) {
+      toast.error('Chưa chọn mục nào để tách nhạc!');
       return;
     }
-    if (!settings.defaultDownloadDir?.trim()) {
-      toast.error('Chưa chọn thư mục lưu video. Hãy chọn nơi lưu trước.');
-      onSelectFolder();
-      return;
-    }
-    const selectedEntries = allEntries.filter((e) => selectedIds.has(e.id));
-    const requests = selectedEntries.map((entry) => {
-      const cfg = itemConfigs[entry.id] || globalConfig;
-      return createDownloadRequest(entry, {
+    const requests = selected.map((e) => {
+      const cfg = itemConfigs[e.id] || globalConfig;
+      return createDownloadRequest(e, {
         ...cfg,
         downloadType: 'audio',
-        audioFormat: globalConfig.audioFormat || 'mp3',
-        audioQuality: globalConfig.audioQuality || '320K',
-        audioNormalize: true,
+        audioFormat: 'mp3',
+        audioQuality: '320K',
       });
     });
     onStartCustomBatch(requests);
-    toast.success(`Đã thêm ${requests.length} bài hát (${globalConfig.audioFormat.toUpperCase()} 320k) vào hàng đợi tách nhạc!`);
   };
 
-  // Summary counts
+  const handleStartBulkDownloadCustom = () => {
+    const selected = allEntries.filter((e) => selectedIds.has(e.id));
+    if (selected.length === 0) {
+      toast.error('Chưa chọn video nào!');
+      return;
+    }
+    const requests = selected.map((e) => {
+      const cfg = itemConfigs[e.id] || globalConfig;
+      return createDownloadRequest(e, cfg);
+    });
+    onStartCustomBatch(requests);
+  };
+
   const summary = useMemo(() => {
     let videoCount = 0;
     let audioCount = 0;
@@ -328,414 +333,592 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
     return { videoCount, audioCount };
   }, [allEntries, selectedIds, itemConfigs, globalConfig]);
 
-  const isSearchMode = media.uploader === 'YouTube Search' || media.title.startsWith('Kết quả tìm kiếm') || media.title.startsWith('Danh sách phát cho');
+  const channelUploader = media.uploader || 'YouTube Media';
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35 }}
-      className="w-full glass-panel rounded-3xl p-4 md:p-6 space-y-4 border border-indigo-500/25 shadow-2xl relative overflow-hidden"
+      transition={{ duration: 0.3 }}
+      className="space-y-4 pb-28"
     >
-      {/* Background glowing gradients */}
-      <div className="absolute -top-24 -right-24 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-24 -left-24 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+      {/* 1. YOUTUBE-STYLE CHANNEL / SEARCH HEADER BANNER */}
+      <div className="relative overflow-hidden rounded-3xl glass-panel p-4 sm:p-6 border border-white/10 shadow-2xl">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
+            {/* Avatar circle */}
+            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden bg-gradient-to-tr from-indigo-600 to-pink-600 p-0.5 shrink-0 shadow-xl shadow-indigo-600/20">
+              {media.thumbnail ? (
+                <img
+                  src={media.thumbnail}
+                  alt={media.title}
+                  className="w-full h-full object-cover rounded-full"
+                />
+              ) : (
+                <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-indigo-300 font-bold text-lg">
+                  {channelUploader.charAt(0).toUpperCase()}
+                </div>
+              )}
+            </div>
 
-      {/* Header Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-white/[0.08]">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0 shadow-lg shadow-indigo-500/20">
-            <Layers className="w-5 h-5" />
+            {/* Title & Metadata */}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight truncate max-w-md sm:max-w-xl">
+                  {media.title}
+                </h2>
+                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold">
+                  <CheckCircle2 className="w-3 h-3 text-indigo-400" />
+                  <span>Xác minh</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-slate-400 mt-1 flex-wrap font-medium">
+                <span className="text-slate-300">{channelUploader}</span>
+                <span>•</span>
+                <span className="text-indigo-300 font-bold">{allEntries.length} kết quả</span>
+                <span>•</span>
+                <span>Đã chọn {selectedCount} mục</span>
+              </div>
+            </div>
           </div>
-          <div className="min-w-0">
-            <h2 className="text-base md:text-lg font-extrabold text-slate-100 truncate flex items-center gap-2">
-              <span>{media.title}</span>
-              <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-[11px] text-indigo-300 font-mono">
-                {allEntries.length} mục
-              </span>
-            </h2>
-            <p className="text-xs text-slate-400">
-              Có thể tải nhanh từng video (1080p / MP3 320k), mở trọn bộ playlist hoặc chỉnh chi tiết từng tập.
-            </p>
+
+          {/* Header Action Buttons */}
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <button
+              onClick={() => setIsGlobalSettingExpanded(!isGlobalSettingExpanded)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-bold text-slate-200 transition-all cursor-pointer shadow-md"
+            >
+              <Settings2 className="w-4 h-4 text-indigo-400" />
+              <span>Cài đặt chung ({globalConfig.quality})</span>
+              {isGlobalSettingExpanded ? (
+                <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              )}
+            </button>
           </div>
         </div>
 
-        {/* Global Settings Trigger */}
-        <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
+        {/* Expandable Global Configuration Panel */}
+        <AnimatePresence>
+          {isGlobalSettingExpanded && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25 }}
+              className="overflow-hidden pt-4 mt-4 border-t border-white/[0.08]"
+            >
+              <div className="space-y-3 p-3 rounded-2xl bg-slate-950/60 border border-white/[0.06]">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Bảng cài đặt định dạng & chất lượng đồng bộ:
+                  </span>
+                  <button
+                    onClick={handleApplyGlobalToAll}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-md shadow-indigo-600/30 cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Đồng bộ cho tất cả {allEntries.length} mục</span>
+                  </button>
+                </div>
+
+                <FormatConfigCard
+                  config={globalConfig}
+                  onChange={setGlobalConfig}
+                  showFilenameInput={false}
+                  titlePrefix="Cấu hình chung"
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* 2. NAVIGATION BAR (YOUTUBE-STYLE TABS & VIEW SWITCHER) */}
+      <div className="glass-panel p-3 rounded-2xl border border-white/10 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg">
+        {/* Left: Category Tabs */}
+        <div className="flex items-center gap-1 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 scrollbar-none text-xs">
+          {[
+            { id: 'all', label: 'Tất cả' },
+            { id: 'video', label: 'Video lẻ' },
+            { id: 'playlist', label: 'Danh sách phát / Trọn bộ' },
+            { id: 'channel', label: 'Kênh' },
+          ].map((tab) => {
+            const isActive = typeFilter === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setTypeFilter(tab.id as any);
+                  setCurrentPage(1);
+                }}
+                className={`px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                    : 'bg-white/[0.03] hover:bg-white/[0.08] text-slate-400 hover:text-slate-200 border border-white/[0.05]'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Center/Right: Live Filter Input & Controls */}
+        <div className="flex items-center gap-2.5 w-full md:w-auto justify-end">
+          {/* Live Search inside results */}
+          <div className="relative flex-1 md:w-60">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={filterText}
+              onChange={(e) => {
+                setFilterText(e.target.value);
+                setCurrentPage(1);
+              }}
+              placeholder="Lọc nhanh kết quả..."
+              className="w-full bg-slate-900/90 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center p-0.5 rounded-xl bg-slate-900/90 border border-white/10 shrink-0">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Dạng lưới chuẩn YouTube"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                viewMode === 'list'
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Dạng danh sách hàng ngang"
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. SELECTION & RANGE CONTROLS BAR */}
+      <div className="px-4 py-3 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
+        {/* Left: Quick Selection buttons */}
+        <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
           <button
-            onClick={() => setIsGlobalSettingExpanded(!isGlobalSettingExpanded)}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-semibold text-slate-300 hover:text-white transition-all cursor-pointer"
+            onClick={() => handleSelectAllTotal(!isAllSelected)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 border border-white/[0.08] font-semibold transition-all cursor-pointer"
           >
-            <Settings2 className="w-4 h-4 text-indigo-400" />
-            <span>{isGlobalSettingExpanded ? 'Thu gọn Cài đặt chung' : 'Cài đặt chung cho tất cả'}</span>
-            {isGlobalSettingExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {isAllSelected ? (
+              <CheckSquare className="w-3.5 h-3.5 text-indigo-400" />
+            ) : (
+              <Square className="w-3.5 h-3.5 text-slate-400" />
+            )}
+            <span>{isAllSelected ? 'Bỏ chọn tất cả' : `Chọn tất cả (${allEntries.length})`}</span>
+          </button>
+
+          <button
+            onClick={handleToggleCurrentPage}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] font-semibold transition-all cursor-pointer"
+          >
+            <span>{isCurrentPageAllSelected ? 'Bỏ chọn trang này' : 'Chọn cả trang này'}</span>
+          </button>
+        </div>
+
+        {/* Right: Range selector */}
+        <div className="flex items-center gap-2 flex-wrap w-full md:w-auto justify-end">
+          <span className="text-slate-400">Chọn từ số:</span>
+          <input
+            type="number"
+            min={1}
+            max={allEntries.length}
+            value={fromEp}
+            onChange={(e) => setFromEp(e.target.value)}
+            className="w-12 bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-center font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+          />
+          <span className="text-slate-400">đến</span>
+          <input
+            type="number"
+            min={1}
+            max={allEntries.length}
+            value={toEp}
+            onChange={(e) => setToEp(e.target.value)}
+            className="w-12 bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-center font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+          />
+          <button
+            onClick={handleApplyRange}
+            className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 font-bold transition-all cursor-pointer"
+          >
+            Chọn khoảng
           </button>
         </div>
       </div>
 
-      {/* 1. GLOBAL SETTINGS PANEL (FULL RICH FORMAT SELECTOR) */}
-      <AnimatePresence>
-        {isGlobalSettingExpanded && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25 }}
-            className="overflow-hidden space-y-3"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-indigo-300 flex items-center gap-2">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                Cài Đặt Chung Cho Toàn Bộ Video (Global Settings)
-              </span>
-              <button
-                onClick={handleApplyGlobalToAll}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-95 text-white text-xs font-bold transition-all shadow-md shadow-indigo-600/30 cursor-pointer self-start sm:self-auto"
-                title="Áp dụng cấu hình này ngay cho tất cả video trong danh sách"
-              >
-                <Check className="w-3.5 h-3.5" />
-                <span>Áp dụng cấu hình này cho tất cả</span>
-              </button>
-            </div>
-
-            <FormatConfigCard
-              config={globalConfig}
-              onChange={setGlobalConfig}
-              showFilenameInput={false}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* 2. QUICK BATCH PRESETS & RANGE TOOLBAR */}
-      <div className="space-y-2.5 p-3 rounded-2xl bg-slate-950/40 border border-white/[0.06]">
-        {/* Quick Batch Presets Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-white/[0.04] text-xs">
-          <div className="flex items-center gap-1.5 text-slate-300 font-semibold">
-            <Zap className="w-3.5 h-3.5 text-amber-400" />
-            <span>Tùy chọn nhanh toàn bộ:</span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              onClick={() => handleSetAllPreset('video', '1080p')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-300 text-[11px] font-bold transition-all cursor-pointer"
-              title="Đặt toàn bộ danh sách thành Video 1080p"
-            >
-              <Video className="w-3 h-3 text-indigo-400" />
-              <span>Tất cả Video 1080p</span>
-            </button>
-
-            <button
-              onClick={() => handleSetAllPreset('video', 'best')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 text-[11px] font-bold transition-all cursor-pointer"
-              title="Đặt toàn bộ danh sách thành Video Cao Nhất (4K/2K)"
-            >
-              <Sparkles className="w-3 h-3 text-purple-400" />
-              <span>Tất cả Video Cao Nhất</span>
-            </button>
-
-            <button
-              onClick={() => handleSetAllPreset('audio', 'mp3')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-pink-500/15 hover:bg-pink-500/30 border border-pink-500/30 text-pink-300 text-[11px] font-bold transition-all cursor-pointer"
-              title="Đặt toàn bộ danh sách thành Nhạc MP3 320k"
-            >
-              <Music className="w-3 h-3 text-pink-400" />
-              <span>Tất cả Nhạc MP3 320k</span>
-            </button>
-
-            <button
-              onClick={() => handleSetAllPreset('audio', 'flac')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold transition-all cursor-pointer"
-              title="Đặt toàn bộ danh sách thành Nhạc Lossless FLAC"
-            >
-              <Disc className="w-3 h-3 text-emerald-400" />
-              <span>Tất cả FLAC Lossless</span>
-            </button>
-          </div>
+      {/* 4. RESULTS DISPLAY (GRID OR LIST VIEW) */}
+      {paginatedEntries.length === 0 ? (
+        <div className="p-12 text-center rounded-3xl glass-panel border border-white/10 space-y-3">
+          <Filter className="w-8 h-8 text-slate-500 mx-auto" />
+          <div className="text-sm font-bold text-slate-300">Không có kết quả nào phù hợp</div>
+          <p className="text-xs text-slate-500">Hãy thử đổi từ khóa tìm kiếm hoặc chọn lại tab phân loại.</p>
         </div>
+      ) : viewMode === 'grid' ? (
+        /* YOUTUBE-STYLE 16:9 GRID VIEW */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {paginatedEntries.map((entry, index) => {
+            const isSelected = selectedIds.has(entry.id);
+            const isExpanded = expandedItemId === entry.id;
+            const isEntryPlaylist =
+              entry.is_playlist || entry.entry_type === 'playlist' || entry.url.includes('/playlist?list=');
+            const durationStr = formatDuration(entry.duration);
 
-        {/* Filter & Range Selector */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center text-xs">
-          {/* Search within results */}
-          <div className="md:col-span-6 relative">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-              placeholder="Lọc tiêu đề hoặc tên kênh trong danh sách..."
-              className="w-full glass-input pl-8 pr-3 py-1.5 rounded-xl text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none"
-            />
-          </div>
-
-          {/* Range Selector */}
-          <div className="md:col-span-6 flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 text-slate-300">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-              <span>Tập:</span>
-              <input
-                type="number"
-                min={1}
-                max={allEntries.length}
-                value={fromEp}
-                onChange={(e) => setFromEp(e.target.value)}
-                className="w-14 bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-center font-mono text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-              />
-              <span>đến</span>
-              <input
-                type="number"
-                min={1}
-                max={allEntries.length}
-                value={toEp}
-                onChange={(e) => setToEp(e.target.value)}
-                className="w-14 bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-center font-mono text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-              />
-              <button
-                onClick={handleApplyRange}
-                className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 font-bold transition-all cursor-pointer"
+            return (
+              <div
+                key={entry.id || index}
+                className={`group relative rounded-2xl overflow-hidden border transition-all flex flex-col ${
+                  isSelected
+                    ? 'bg-slate-900/90 border-indigo-500/50 shadow-xl shadow-indigo-950/40'
+                    : 'bg-slate-950/60 border-white/[0.08] hover:border-white/20'
+                }`}
               >
-                Chọn khoảng
-              </button>
-            </div>
+                {/* 16:9 Thumbnail with duration / playlist overlay */}
+                <div className="relative aspect-video w-full bg-slate-900 overflow-hidden">
+                  {entry.thumbnail ? (
+                    <img
+                      src={entry.thumbnail}
+                      alt={entry.title}
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-900 to-indigo-950 text-slate-600">
+                      <Video className="w-10 h-10" />
+                    </div>
+                  )}
 
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => handleSelectAll(!isAllSelected)}
-                className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.06] font-semibold transition-all cursor-pointer"
-              >
-                {isAllSelected ? 'Bỏ chọn hết' : 'Chọn tất cả'}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. VIDEO / PLAYLIST CARDS LIST WITH INDIVIDUAL ACTIONS */}
-      <div className="space-y-2.5 max-h-[52vh] overflow-y-auto pr-1.5 custom-scrollbar">
-        {filteredEntries.map((entry, idx) => {
-          const isSelected = selectedIds.has(entry.id);
-          const itemCfg = itemConfigs[entry.id] || globalConfig;
-          const isExpanded = expandedItemId === entry.id;
-          const isEntryPlaylist = entry.is_playlist || entry.entry_type === 'playlist' || entry.url.includes('/playlist?list=');
-          const isEntryChannel = entry.entry_type === 'channel' || entry.url.includes('/channel/') || entry.url.includes('/@');
-
-          return (
-            <div
-              key={entry.id || idx}
-              className={`rounded-2xl transition-all border ${
-                isSelected
-                  ? 'bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-slate-900/60 border-indigo-500/40 shadow-md shadow-indigo-950/30'
-                  : 'bg-white/[0.02] border-white/[0.06] hover:border-white/15'
-              }`}
-            >
-              {/* Main Card Row */}
-              <div className="p-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                {/* Left: Checkbox, Index, Thumbnail, Title */}
-                <div
-                  onClick={() => toggleSelect(entry.id)}
-                  className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer"
-                >
-                  <div className="text-indigo-400 shrink-0">
+                  {/* Top-Left Selection Checkbox */}
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSelect(entry.id);
+                    }}
+                    className="absolute top-2 left-2 z-10 p-1.5 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-md cursor-pointer transition-all border border-white/10"
+                    title={isSelected ? 'Bỏ chọn' : 'Tích chọn'}
+                  >
                     {isSelected ? (
-                      <CheckSquare className="w-5 h-5 text-indigo-400" />
+                      <CheckSquare className="w-4 h-4 text-indigo-400" />
                     ) : (
-                      <Square className="w-5 h-5 text-slate-600" />
+                      <Square className="w-4 h-4 text-slate-300" />
                     )}
                   </div>
 
-                  <span className="text-xs font-mono text-slate-500 w-6 text-center font-bold shrink-0">
-                    #{idx + 1}
-                  </span>
+                  {/* Bottom-Right Duration or Playlist Badge */}
+                  <div className="absolute bottom-2 right-2 z-10">
+                    {isEntryPlaylist ? (
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-white text-[11px] font-bold border border-white/10 shadow-md">
+                        <ListVideo className="w-3.5 h-3.5 text-purple-400" />
+                        <span>{entry.playlist_count ? `${entry.playlist_count} video` : 'Trọn bộ'}</span>
+                      </div>
+                    ) : durationStr ? (
+                      <div className="px-1.5 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-white text-[10px] font-mono font-bold">
+                        {durationStr}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
 
-                  <div className="relative w-24 aspect-video rounded-xl overflow-hidden bg-slate-900 shrink-0 border border-white/10 shadow-md">
+                {/* Card Content & Metadata */}
+                <div className="p-3 flex-1 flex flex-col justify-between space-y-2.5">
+                  <div className="space-y-1">
+                    <h3
+                      onClick={() => toggleSelect(entry.id)}
+                      className="text-xs sm:text-sm font-bold text-slate-100 line-clamp-2 leading-snug cursor-pointer group-hover:text-indigo-300 transition-colors"
+                      title={entry.title}
+                    >
+                      {entry.title}
+                    </h3>
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate">
+                      <User className="w-3 h-3 text-slate-500 shrink-0" />
+                      <span className="truncate">{entry.uploader || channelUploader}</span>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons Bar */}
+                  <div className="pt-2 border-t border-white/[0.06] flex items-center gap-1.5">
+                    {isEntryPlaylist ? (
+                      <button
+                        onClick={() => onOpenItem && onOpenItem(entry.url)}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-600/20 cursor-pointer"
+                        title="Mở toàn bộ danh sách phát này để tải"
+                      >
+                        <ListVideo className="w-3.5 h-3.5" />
+                        <span>Mở trọn bộ</span>
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleDownloadSingleVideo(entry)}
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold transition-all cursor-pointer"
+                          title="Tải video chất lượng cao"
+                        >
+                          <Video className="w-3 h-3" />
+                          <span>Video</span>
+                        </button>
+                        <button
+                          onClick={() => handleDownloadSingleAudio(entry)}
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl bg-pink-600/20 hover:bg-pink-600/30 text-pink-300 border border-pink-500/30 text-xs font-bold transition-all cursor-pointer"
+                          title="Tách âm thanh MP3 320k"
+                        >
+                          <Music className="w-3 h-3" />
+                          <span>MP3</span>
+                        </button>
+                        <button
+                          onClick={() => setExpandedItemId(isExpanded ? null : entry.id)}
+                          className={`p-1.5 rounded-xl border transition-all cursor-pointer ${
+                            isExpanded
+                              ? 'bg-indigo-600 text-white border-indigo-500'
+                              : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white border-white/10'
+                          }`}
+                          title="Tùy chỉnh định dạng riêng"
+                        >
+                          <Settings2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Expandable Per-item Configuration */}
+                  {isExpanded && !isEntryPlaylist && (
+                    <div className="pt-2">
+                      <FormatConfigCard
+                        config={itemConfigs[entry.id] || globalConfig}
+                        onChange={(newCfg) =>
+                          setItemConfigs((prev) => ({ ...prev, [entry.id]: newCfg }))
+                        }
+                        showFilenameInput={true}
+                        titlePrefix="Tùy chỉnh mục này"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* YOUTUBE-STYLE HORIZONTAL LIST VIEW */
+        <div className="space-y-3">
+          {paginatedEntries.map((entry, index) => {
+            const isSelected = selectedIds.has(entry.id);
+            const isExpanded = expandedItemId === entry.id;
+            const isEntryPlaylist =
+              entry.is_playlist || entry.entry_type === 'playlist' || entry.url.includes('/playlist?list=');
+            const durationStr = formatDuration(entry.duration);
+
+            return (
+              <div
+                key={entry.id || index}
+                className={`rounded-2xl border transition-all p-3 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
+                  isSelected
+                    ? 'bg-slate-900/90 border-indigo-500/50 shadow-lg shadow-indigo-950/30'
+                    : 'bg-slate-950/60 border-white/[0.08] hover:border-white/20'
+                }`}
+              >
+                {/* Left: Checkbox + 16:9 Thumbnail + Info */}
+                <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                  <div
+                    onClick={() => toggleSelect(entry.id)}
+                    className="cursor-pointer text-indigo-400 p-1"
+                  >
+                    {isSelected ? (
+                      <CheckSquare className="w-5 h-5 text-indigo-400" />
+                    ) : (
+                      <Square className="w-5 h-5 text-slate-400" />
+                    )}
+                  </div>
+
+                  <div className="relative aspect-video w-32 sm:w-40 rounded-xl overflow-hidden bg-slate-900 shrink-0 border border-white/10">
                     {entry.thumbnail ? (
                       <img
                         src={entry.thumbnail}
                         alt={entry.title}
                         className="w-full h-full object-cover"
+                        loading="lazy"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-slate-600">
-                        {isEntryPlaylist ? <Layers className="w-6 h-6 text-purple-400" /> : <Video className="w-6 h-6" />}
+                        <Video className="w-6 h-6" />
                       </div>
                     )}
-                    {entry.duration ? (
-                      <span className="absolute bottom-1 right-1 px-1.5 py-0.2 rounded bg-black/80 text-[10px] text-slate-200 font-mono font-semibold">
-                        {Math.floor(entry.duration / 60)}:
-                        {String(Math.floor(entry.duration % 60)).padStart(2, '0')}
-                      </span>
-                    ) : isEntryPlaylist && (
-                      <span className="absolute bottom-1 right-1 px-1.5 py-0.2 rounded bg-purple-900/90 text-[10px] text-purple-200 font-mono font-bold flex items-center gap-0.5">
-                        <Layers className="w-2.5 h-2.5" />
-                        <span>{entry.playlist_count || 'Playlist'}</span>
-                      </span>
-                    )}
+                    <div className="absolute bottom-1 right-1 z-10">
+                      {isEntryPlaylist ? (
+                        <div className="px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-bold text-purple-300">
+                          Playlist
+                        </div>
+                      ) : durationStr ? (
+                        <div className="px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-mono font-bold text-white">
+                          {durationStr}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
 
+                  {/* Title & Metadata */}
                   <div className="min-w-0 space-y-1">
-                    <h3 className="text-xs md:text-sm font-bold text-slate-100 line-clamp-1 group-hover:text-indigo-300 transition-colors flex items-center gap-2">
-                      <span>{itemCfg.customFilename?.trim() || entry.title}</span>
-                      {isEntryPlaylist && (
-                        <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 font-semibold">
-                          Danh sách phát
-                        </span>
-                      )}
-                      {isEntryChannel && (
-                        <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-semibold">
-                          Kênh
-                        </span>
-                      )}
+                    <h3
+                      onClick={() => toggleSelect(entry.id)}
+                      className="text-xs sm:text-sm font-bold text-slate-100 line-clamp-2 hover:text-indigo-300 cursor-pointer transition-colors"
+                    >
+                      {entry.title}
                     </h3>
-                    <div className="flex items-center gap-2 text-[11px] text-slate-400 font-medium flex-wrap">
-                      {entry.uploader && (
-                        <span className="flex items-center gap-1 truncate max-w-xs">
-                          <User className="w-3 h-3 text-indigo-400 shrink-0" />
-                          <span className="truncate">{entry.uploader}</span>
-                        </span>
-                      )}
-                      {entry.playlist_count && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono border border-purple-500/30">
-                          {entry.playlist_count} tập / video
-                        </span>
-                      )}
-                      {itemCfg.trimStart && itemCfg.trimEnd && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono border border-amber-500/30 flex items-center gap-1">
-                          <Scissors className="w-3 h-3 text-amber-400 shrink-0" />
-                          <span>{itemCfg.trimStart} - {itemCfg.trimEnd}</span>
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <span>{entry.uploader || channelUploader}</span>
+                      {isEntryPlaylist && (
+                        <span className="px-2 py-0.2 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-bold">
+                          {entry.playlist_count ? `${entry.playlist_count} tập` : 'Danh sách phát'}
                         </span>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* Right: Modern Glassmorphic Fast Action Controls */}
-                <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
-                  {/* If this entry is a PLAYLIST: offer direct "Mở trọn bộ danh sách" button */}
-                  {isEntryPlaylist && onOpenItem ? (
+                {/* Right Action buttons */}
+                <div className="flex items-center gap-2 w-full md:w-auto justify-end shrink-0">
+                  {isEntryPlaylist ? (
                     <button
-                      onClick={() => onOpenItem(entry.url)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 hover:text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
-                      title="Mở toàn bộ danh sách các tập của playlist này để chọn tải"
+                      onClick={() => onOpenItem && onOpenItem(entry.url)}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
                     >
-                      <ListVideo className="w-3.5 h-3.5 text-purple-400" />
-                      <span>Mở trọn bộ ({entry.playlist_count || 'Xem các tập'})</span>
-                    </button>
-                  ) : isEntryChannel && onOpenItem ? (
-                    <button
-                      onClick={() => onOpenItem(`${entry.url}/playlists`)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-600/30 hover:bg-cyan-600/50 border border-cyan-500/40 text-cyan-200 hover:text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
-                      title="Xem danh sách phát của kênh này"
-                    >
-                      <Layers className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>Xem Playlist kênh</span>
+                      <ListVideo className="w-3.5 h-3.5" />
+                      <span>Mở trọn bộ</span>
                     </button>
                   ) : (
-                    /* Regular video format switcher pills */
-                    <div className="flex items-center p-0.5 rounded-xl bg-slate-900/90 border border-white/10 text-xs">
+                    <>
                       <button
-                        type="button"
-                        onClick={() => updateItemConfig(entry.id, { ...itemCfg, downloadType: 'video' })}
-                        className={`flex items-center gap-1 px-2 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                          itemCfg.downloadType === 'video'
-                            ? 'bg-indigo-600/40 text-indigo-200 border border-indigo-500/50 shadow-sm'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
+                        onClick={() => handleDownloadSingleVideo(entry)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold transition-all cursor-pointer"
                       >
-                        <Video className="w-3 h-3" />
-                        <span>{itemCfg.quality || '1080p'}</span>
+                        <Video className="w-3.5 h-3.5" />
+                        <span>Tải Video</span>
                       </button>
                       <button
-                        type="button"
-                        onClick={() => updateItemConfig(entry.id, { ...itemCfg, downloadType: 'audio' })}
-                        className={`flex items-center gap-1 px-2 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                          itemCfg.downloadType === 'audio'
-                            ? 'bg-pink-600/40 text-pink-200 border border-pink-500/50 shadow-sm'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
+                        onClick={() => handleDownloadSingleAudio(entry)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-pink-600/20 hover:bg-pink-600/30 text-pink-300 border border-pink-500/30 text-xs font-bold transition-all cursor-pointer"
                       >
-                        <Music className="w-3 h-3" />
-                        <span>{itemCfg.audioFormat?.toUpperCase() || 'MP3'}</span>
+                        <Music className="w-3.5 h-3.5" />
+                        <span>Tách MP3</span>
                       </button>
-                    </div>
+                      <button
+                        onClick={() => setExpandedItemId(isExpanded ? null : entry.id)}
+                        className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white border border-white/10 transition-all cursor-pointer"
+                        title="Tùy chỉnh"
+                      >
+                        <Settings2 className="w-4 h-4" />
+                      </button>
+                    </>
                   )}
-
-                  {/* 1-Click Fast Video Download */}
-                  <button
-                    onClick={() => handleQuickDownloadVideoSingle(entry)}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 hover:border-indigo-500/60 text-indigo-200 hover:text-white text-xs font-bold transition-all cursor-pointer"
-                    title={`Tải ngay Video ${itemCfg.quality || '1080p'} MP4`}
-                  >
-                    <Video className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Tải Video</span>
-                  </button>
-
-                  {/* 1-Click Fast Audio Extract */}
-                  <button
-                    onClick={() => handleQuickDownloadAudioSingle(entry)}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-pink-600/20 hover:bg-pink-600/40 border border-pink-500/30 hover:border-pink-500/60 text-pink-200 hover:text-white text-xs font-bold transition-all cursor-pointer"
-                    title="Tách ngay âm thanh MP3 320kbps"
-                  >
-                    <Music className="w-3.5 h-3.5 text-pink-400" />
-                    <span>Tách MP3</span>
-                  </button>
-
-                  {/* Button to toggle Per-Video Detail Editor Accordion */}
-                  <button
-                    onClick={() => setExpandedItemId(isExpanded ? null : entry.id)}
-                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                      isExpanded
-                        ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                        : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border-white/10'
-                    }`}
-                    title="Mở toàn bộ tùy chỉnh chi tiết như khi dán link cho riêng video này"
-                  >
-                    <Settings2 className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Chi tiết</span>
-                    {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  </button>
                 </div>
               </div>
+            );
+          })}
+        </div>
+      )}
 
-              {/* Accordion: FULL RICH FORMAT SELECTOR FOR THIS SPECIFIC VIDEO */}
-              <AnimatePresence>
-                {isExpanded && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="overflow-hidden border-t border-white/[0.06] bg-slate-950/70 p-4 rounded-b-2xl space-y-3"
-                  >
-                    <FormatConfigCard
-                      config={itemCfg}
-                      onChange={(newCfg) => updateItemConfig(entry.id, newCfg)}
-                      showFilenameInput={true}
-                      titlePrefix={`Tùy chỉnh chi tiết cho: #${idx + 1} - ${entry.title}`}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          );
-        })}
+      {/* 5. PAGINATION & LAZY LOADING CONTROLS */}
+      {totalPages > 1 && (
+        <div className="p-4 rounded-2xl glass-panel border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <div className="text-slate-400">
+            Hiển thị trang <span className="text-white font-bold">{currentPage}</span> / {totalPages} (Tổng cộng{' '}
+            <span className="text-indigo-300 font-bold">{filteredEntries.length}</span> mục)
+          </div>
 
-        {/* Load More Button for Searches */}
-        {isSearchMode && onSearchMore && (
-          <div className="pt-2 flex justify-center">
+          <div className="flex items-center gap-1.5">
             <button
-              onClick={() => onSearchMore(100)}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-indigo-500/40 text-xs font-semibold text-slate-300 hover:text-white transition-all cursor-pointer"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
+                currentPage === 1
+                  ? 'bg-white/[0.02] text-slate-600 cursor-not-allowed border border-white/[0.04]'
+                  : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/10'
+              }`}
             >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Tải thêm kết quả (Xem 100 video)</span>
+              <ChevronLeft className="w-4 h-4" />
+              <span>Trước</span>
+            </button>
+
+            {/* Page number buttons */}
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum = i + 1;
+                if (totalPages > 5 && currentPage > 3) {
+                  pageNum = currentPage - 3 + i;
+                  if (pageNum > totalPages) pageNum = totalPages - (4 - i);
+                }
+                const isActive = currentPage === pageNum;
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`w-8 h-8 rounded-xl font-bold transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                        : 'bg-white/[0.03] hover:bg-white/[0.08] text-slate-400 hover:text-white border border-white/[0.05]'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
+                currentPage === totalPages
+                  ? 'bg-white/[0.02] text-slate-600 cursor-not-allowed border border-white/[0.04]'
+                  : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/10'
+              }`}
+            >
+              <span>Sau</span>
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-        )}
-      </div>
 
-      {/* 4. STICKY BOTTOM ACTION BAR WITH DUAL BATCH TRIGGERS */}
-      <div className="pt-3 border-t border-white/[0.08] flex flex-col md:flex-row items-center justify-between gap-3">
+          {/* Page size selector */}
+          <div className="flex items-center gap-1.5 text-slate-400">
+            <span>Mỗi trang:</span>
+            {[18, 24, 36].map((sz) => (
+              <button
+                key={sz}
+                onClick={() => {
+                  setPageSize(sz);
+                  setCurrentPage(1);
+                }}
+                className={`px-2 py-0.5 rounded-lg font-mono font-bold transition-all cursor-pointer ${
+                  pageSize === sz
+                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {sz}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 6. FLOATING DOCK BOTTOM SUMMARY & BATCH DOWNLOAD ACTIONS */}
+      <div className="fixed bottom-4 left-4 right-4 max-w-6xl mx-auto z-40 p-3.5 sm:p-4 rounded-3xl bg-slate-950/90 border border-indigo-500/30 shadow-2xl backdrop-blur-2xl flex flex-col md:flex-row items-center justify-between gap-3">
         <button
           onClick={onSelectFolder}
           className="flex items-center gap-2 text-xs text-slate-400 hover:text-indigo-300 font-mono truncate max-w-xs cursor-pointer"

@@ -2,7 +2,7 @@ use crate::engine_manager::{
     check_status, download_ffmpeg_binary, download_ytdlp_binary, EngineStatus,
 };
 use crate::ytdlp::{
-    execute_download, fetch_media_metadata, DownloadManager, DownloadProgressEvent, DownloadRequest,
+    execute_download, fetch_media_metadata, list_extractors, DownloadManager, DownloadProgressEvent, DownloadRequest,
     MediaInfo, VideoFormat,
 };
 use std::path::PathBuf;
@@ -369,5 +369,10 @@ pub fn remove_custom_plugin(filename: String) -> Result<(), String> {
 #[tauri::command]
 pub fn open_plugins_folder() -> Result<(), String> {
     open_plugins_dir_fn()
+}
+
+#[tauri::command]
+pub async fn get_supported_extractors() -> Result<Vec<String>, String> {
+    list_extractors().await
 }
 
