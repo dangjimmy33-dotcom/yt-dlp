@@ -70,6 +70,15 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
   ];
 
   const hasValidUrl = url.trim().startsWith("http");
+  const isKeywordSearch = url.trim().length > 0 && !url.trim().startsWith("http://") && !url.trim().startsWith("https://");
+
+  const quickSearchSuggestions = [
+    "Conan Pops Anime",
+    "Thám Tử Lừng Danh Conan",
+    "Sơn Tùng M-TP",
+    "Nhạc Trẻ Remix 2024",
+    "Lofi Chill Không Lời",
+  ];
 
   return (
     <div className="w-full space-y-3">
@@ -95,7 +104,7 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           onKeyDown={handleKeyDown}
-          placeholder="Dán đường link Video, Playlist, Shorts, TikTok, Facebook..."
+          placeholder="Nhập tên video / phim / bài hát (VD: Conan Pops Anime, Sơn Tùng...) hoặc Dán link..."
           className="w-full bg-transparent text-sm md:text-base text-slate-100 placeholder:text-slate-500 focus:outline-none py-2 px-1 font-medium"
         />
 
@@ -124,13 +133,20 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
           className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
             !url.trim() || isLoading
               ? "bg-slate-800/60 text-slate-500 cursor-not-allowed border border-white/5"
-              : "glass-button-primary cursor-pointer"
+              : isKeywordSearch
+                ? "bg-gradient-to-r from-indigo-500 via-purple-600 to-pink-500 text-white shadow-lg shadow-indigo-500/30 hover:opacity-95 cursor-pointer"
+                : "glass-button-primary cursor-pointer"
           }`}
         >
           {isLoading ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin text-white" />
-              <span>Đang phân tích...</span>
+              <span>{isKeywordSearch ? "Đang tìm..." : "Đang phân tích..."}</span>
+            </>
+          ) : isKeywordSearch ? (
+            <>
+              <Search className="w-4 h-4" />
+              <span>Tìm Kiếm</span>
             </>
           ) : (
             <>
@@ -186,6 +202,27 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Quick Search Suggestions */}
+      {!hasValidUrl && (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] scrollbar-none">
+          <span className="text-slate-500 flex items-center gap-1 shrink-0 font-medium mr-1">
+            <Sparkles className="w-3 h-3 text-amber-400" /> Gợi ý tìm nhanh:
+          </span>
+          {quickSearchSuggestions.map((term) => (
+            <button
+              key={term}
+              onClick={() => {
+                setUrl(term);
+                onAnalyze(term);
+              }}
+              className="shrink-0 px-2.5 py-1 rounded-lg bg-white/[0.03] hover:bg-indigo-500/20 border border-white/[0.06] hover:border-indigo-500/30 text-slate-300 hover:text-indigo-200 transition-all cursor-pointer font-medium"
+            >
+              {term}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Platform Badges */}
       <motion.div

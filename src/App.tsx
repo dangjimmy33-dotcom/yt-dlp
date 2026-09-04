@@ -24,6 +24,7 @@ import { FormatSelector } from "./components/FormatSelector";
 import { DownloadQueue } from "./components/DownloadQueue";
 import { PlaylistModal } from "./components/PlaylistModal";
 import { BatchDownloadModal } from "./components/BatchDownloadModal";
+import { SearchResultsList } from "./components/SearchResultsList";
 import { SettingsModal } from "./components/SettingsModal";
 import { EngineStatusModal } from "./components/EngineStatusModal";
 import { UpdateNotificationModal } from "./components/UpdateNotificationModal";
@@ -599,6 +600,36 @@ export default function App() {
     });
   };
 
+  // Download single item directly from search / playlist list
+  const handleDownloadSingleItem = (
+    entry: PlaylistEntry,
+    type: "video" | "audio",
+    qualityOrFormat: string,
+    audioQuality?: string
+  ) => {
+    const req: DownloadRequest = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      url: entry.url,
+      title:
+        type === "audio"
+          ? `[Audio ${qualityOrFormat.toUpperCase()}] ${entry.title}`
+          : `[Video ${qualityOrFormat}] ${entry.title}`,
+      download_type: type,
+      quality: type === "video" ? qualityOrFormat : "best",
+      video_container: type === "video" ? "mp4" : undefined,
+      audio_format: type === "audio" ? qualityOrFormat : undefined,
+      audio_quality: type === "audio" ? audioQuality || "320K" : undefined,
+      audio_normalize: false,
+      output_dir: settings.defaultDownloadDir,
+      embed_subtitles: settings.embedSubtitles,
+      embed_thumbnail: true,
+      embed_metadata: settings.embedMetadata,
+      sponsorblock: settings.sponsorBlock,
+      cookies_browser: settings.cookiesBrowser,
+    };
+    handleStartDownload(req);
+  };
+
   // Cancel task
   const handleCancelDownload = async (id: string) => {
     try {
@@ -1000,22 +1031,32 @@ export default function App() {
                 isLoading={isLoading}
               />
 
-              {/* Media Preview & Formats Card */}
+              {/* Media Preview & Formats Card OR Search / Playlist Results List */}
               {mediaInfo && (
-                <div className="space-y-4">
-                  <MediaPreviewCard
-                    media={mediaInfo}
-                    onOpenPlaylistModal={() => setIsPlaylistModalOpen(true)}
-                  />
-
-                  <FormatSelector
+                mediaInfo.is_playlist || (mediaInfo.entries && mediaInfo.entries.length > 0) ? (
+                  <SearchResultsList
                     media={mediaInfo}
                     settings={settings}
-                    onStartDownload={handleStartDownload}
+                    onDownloadSingle={handleDownloadSingleItem}
+                    onDownloadMultiple={handleDownloadPlaylistSelected}
                     onSelectFolder={handleSelectFolder}
-                    outputDir={settings.defaultDownloadDir}
                   />
-                </div>
+                ) : (
+                  <div className="space-y-4">
+                    <MediaPreviewCard
+                      media={mediaInfo}
+                      onOpenPlaylistModal={() => setIsPlaylistModalOpen(true)}
+                    />
+
+                    <FormatSelector
+                      media={mediaInfo}
+                      settings={settings}
+                      onStartDownload={handleStartDownload}
+                      onSelectFolder={handleSelectFolder}
+                      outputDir={settings.defaultDownloadDir}
+                    />
+                  </div>
+                )
               )}
             </motion.div>
           ) : (

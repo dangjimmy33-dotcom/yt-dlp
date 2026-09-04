@@ -351,7 +351,22 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
         return Err("yt-dlp engine not found. Please click update engine first.".to_string());
     }
 
-    let referer = crate::plugins::get_referer_for_url(url);
+    let trimmed = url.trim();
+    let is_search = !trimmed.starts_with("http://")
+        && !trimmed.starts_with("https://")
+        && !trimmed.starts_with("ytsearch");
+
+    let query_target = if is_search {
+        format!("ytsearch30:{}", trimmed)
+    } else {
+        trimmed.to_string()
+    };
+
+    let referer = if !is_search {
+        crate::plugins::get_referer_for_url(&query_target)
+    } else {
+        None
+    };
 
     let mut cmd = Command::new(&ytdlp_path);
     cmd.arg("--dump-single-json")
@@ -361,7 +376,7 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
         .arg("node")
         .arg("--extractor-args")
         .arg("youtube:player_client=android,web,ios")
-        .arg(url);
+        .arg(&query_target);
 
     let plugins_dir = crate::plugins::get_plugins_dir();
     if plugins_dir.exists() {
@@ -440,8 +455,16 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
             }
         }
 
-        let playlist_title = json.get("title").and_then(|v| v.as_str()).unwrap_or("Playlist").to_string();
-        let uploader = json.get("uploader").or_else(|| json.get("channel")).and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
+        let playlist_title = if is_search {
+            format!("Kết quả tìm kiếm: \"{}\"", trimmed)
+        } else {
+            json.get("title").and_then(|v| v.as_str()).unwrap_or("Playlist").to_string()
+        };
+        let uploader = if is_search {
+            "YouTube Search".to_string()
+        } else {
+            json.get("uploader").or_else(|| json.get("channel")).and_then(|v| v.as_str()).unwrap_or("Unknown").to_string()
+        };
         let count = entries.len();
 
         return Ok(MediaInfo {
