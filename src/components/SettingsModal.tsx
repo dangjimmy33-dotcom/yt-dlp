@@ -23,6 +23,7 @@ import {
   ChevronDown,
   Boxes,
   Cpu,
+  BookOpen,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -34,6 +35,7 @@ interface SettingsModalProps {
   onSelectFolder?: () => void;
   onOpenPlugins?: () => void;
   onOpenEngineModal?: () => void;
+  onOpenAbout?: (tab?: "guide" | "terms" | "credits") => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -43,6 +45,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSaveSettings,
   onOpenPlugins,
   onOpenEngineModal,
+  onOpenAbout,
 }) => {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
   const [isBrowserDropdownOpen, setIsBrowserDropdownOpen] = useState(false);
@@ -438,6 +441,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <Cpu className="w-3.5 h-3.5" />
                   <span>Cấu hình Engine</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* About, Terms & Credits Section */}
+          {onOpenAbout && (
+            <div className="space-y-2.5 pt-2 border-t border-white/[0.06]">
+              <span className="text-xs font-bold text-slate-300 block flex items-center gap-1.5">
+                <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                <span>Trợ Giúp & Pháp Lý</span>
+              </span>
+
+              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between text-xs">
+                <div>
+                  <span className="font-semibold text-slate-200 block">Điều Khoản Sử Dụng & Hướng Dẫn</span>
+                  <span className="text-[11px] text-slate-400 block">Xem hướng dẫn sử dụng, điều khoản miễn trừ trách nhiệm và credit công nghệ</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenAbout("guide");
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-xs font-bold transition-all cursor-pointer shrink-0"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Xem Chi Tiết</span>
                 </button>
               </div>
             </div>

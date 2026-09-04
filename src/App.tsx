@@ -31,6 +31,7 @@ import { UpdateNotificationModal } from "./components/UpdateNotificationModal";
 import { PluginManagerModal } from "./components/PluginManagerModal";
 import { SupportedSitesModal } from "./components/SupportedSitesModal";
 import { SearchLoadingSkeleton } from "./components/SearchLoadingSkeleton";
+import { AboutModal } from "./components/AboutModal";
 
 import { playNotificationBell, playSuccessChime } from "./utils/sound";
 import { checkForGithubUpdates, GithubReleaseInfo } from "./utils/updater";
@@ -57,6 +58,7 @@ import {
   Globe,
   Layers,
   ArrowLeft,
+  BookOpen,
 } from "lucide-react";
 
 export default function App() {
@@ -133,6 +135,8 @@ export default function App() {
   const [isEngineModalOpen, setIsEngineModalOpen] = useState<boolean>(false);
   const [isPluginModalOpen, setIsPluginModalOpen] = useState<boolean>(false);
   const [isSupportedSitesOpen, setIsSupportedSitesOpen] = useState<boolean>(false);
+  const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
+  const [aboutInitialTab, setAboutInitialTab] = useState<"guide" | "terms" | "credits">("guide");
 
   // Speed data for real-time graph
   const [speedData, setSpeedData] = useState<{ time: string; speed: number }[]>([]);
@@ -854,6 +858,18 @@ export default function App() {
               <Compass className="w-3.5 h-3.5 text-cyan-400" />
               <span>Bắt Link Web</span>
             </button>
+
+            <button
+              onClick={() => {
+                setAboutInitialTab("guide");
+                setIsAboutOpen(true);
+              }}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-white/[0.04] transition-all cursor-pointer"
+              title="Xem hướng dẫn sử dụng, điều khoản dịch vụ và credit công nghệ"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+              <span>Trợ Giúp & Điều Khoản</span>
+            </button>
           </div>
 
           <div className="flex items-center gap-1.5 min-w-0">
@@ -885,6 +901,17 @@ export default function App() {
                 <AlertCircle className="w-3.5 h-3.5" />
               )}
               <span>{engineStatus === null ? "ENGINE..." : isEngineReady ? "ENGINE OK" : "THIẾU ENGINE"}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setAboutInitialTab("guide");
+                setIsAboutOpen(true);
+              }}
+              className="p-2 rounded-xl hover:bg-white/[0.08] text-slate-400 hover:text-white transition-all cursor-pointer"
+              title="Hướng dẫn sử dụng, Điều khoản & Credit"
+            >
+              <BookOpen className="w-4 h-4" />
             </button>
 
             <button
@@ -1193,6 +1220,10 @@ export default function App() {
         onSaveSettings={handleSaveSettings}
         onOpenPlugins={() => setIsPluginModalOpen(true)}
         onOpenEngineModal={handleOpenEngineModal}
+        onOpenAbout={(tab) => {
+          if (tab) setAboutInitialTab(tab);
+          setIsAboutOpen(true);
+        }}
       />
 
       <EngineStatusModal
@@ -1221,6 +1252,12 @@ export default function App() {
       <SupportedSitesModal
         isOpen={isSupportedSitesOpen}
         onClose={() => setIsSupportedSitesOpen(false)}
+      />
+
+      <AboutModal
+        isOpen={isAboutOpen}
+        onClose={() => setIsAboutOpen(false)}
+        initialTab={aboutInitialTab}
       />
     </div>
   );
