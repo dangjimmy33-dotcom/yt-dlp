@@ -1037,8 +1037,8 @@ export default function App() {
                   <SearchResultsList
                     media={mediaInfo}
                     settings={settings}
-                    onDownloadSingle={handleDownloadSingleItem}
-                    onDownloadMultiple={handleDownloadPlaylistSelected}
+                    onStartCustomBatch={handleStartBatchDownload}
+                    onStartSingleDownload={handleStartDownload}
                     onSelectFolder={handleSelectFolder}
                   />
                 ) : (
