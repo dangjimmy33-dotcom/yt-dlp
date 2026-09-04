@@ -40,17 +40,24 @@ pub const SNIFFER_INJECTION_SCRIPT: &str = r#"
 
   function showFloatingBadge(url, type) {
     try {
+      try { navigator.clipboard.writeText(url); } catch(e) {}
       if (document.getElementById('__flowdl_badge__')) return;
       const badge = document.createElement('div');
       badge.id = '__flowdl_badge__';
-      badge.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483647;background:rgba(15,23,42,0.95);backdrop-filter:blur(16px);border:1.5px solid #6366f1;border-radius:16px;padding:14px 20px;color:#fff;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 20px 40px rgba(0,0,0,0.8),0 0 25px rgba(99,102,241,0.5);display:flex;align-items:center;gap:14px;cursor:pointer;';
+      badge.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483647;background:rgba(15,23,42,0.96);backdrop-filter:blur(16px);border:2px solid #6366f1;border-radius:16px;padding:14px 20px;color:#fff;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 20px 40px rgba(0,0,0,0.8),0 0 25px rgba(99,102,241,0.6);display:flex;align-items:center;gap:14px;cursor:pointer;user-select:none;';
       badge.innerHTML = `
         <div style="width:12px;height:12px;border-radius:50%;background:#10b981;box-shadow:0 0 12px #10b981;flex-shrink:0;"></div>
         <div>
-          <div style="font-size:13px;font-weight:700;color:#e0e7ff;letter-spacing:-0.2px;">ĐÃ BẮT ĐƯỢC LUỒNG VIDEO!</div>
-          <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Chuyển về cửa sổ chính Studio để tải ngay</div>
+          <div style="font-size:13px;font-weight:700;color:#e0e7ff;">✨ ĐÃ BẮT ĐƯỢC LUỒNG VIDEO!</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Đã tự copy • Bấm vào đây hoặc chuyển về Studio để tải</div>
         </div>
       `;
+      badge.onclick = () => {
+        try {
+          navigator.clipboard.writeText(url);
+          badge.innerHTML = '<div style="font-size:13px;font-weight:700;color:#10b981;">ĐÃ SAO CHÉP LINK! Hãy mở cửa sổ Studio để tải.</div>';
+        } catch(e) {}
+      };
       document.body.appendChild(badge);
     } catch(e) {}
   }
@@ -67,6 +74,7 @@ pub const SNIFFER_INJECTION_SCRIPT: &str = r#"
     if (isMediaStream(url)) {
       captured.add(url);
       console.log('[FLOWDL Sniffer Intercepted]', type, url);
+      try { navigator.clipboard.writeText(url); } catch(e) {}
 
       // Signal Rust backend via custom flowdl scheme navigation
       try {

@@ -335,20 +335,14 @@ export default function App() {
           clean &&
           clean.startsWith("http") &&
           clean !== lastCheckedClipboard.current &&
-          clean !== url &&
-          (clean.includes("youtube.com") ||
-            clean.includes("youtu.be") ||
-            clean.includes("tiktok.com") ||
-            clean.includes("facebook.com") ||
-            clean.includes("fb.watch") ||
-            clean.includes("instagram.com") ||
-            clean.includes("twitter.com") ||
-            clean.includes("x.com") ||
-            clean.includes("soundcloud.com") ||
-            clean.includes("bilibili.com"))
+          clean !== url
         ) {
           lastCheckedClipboard.current = clean;
           setDetectedClipboardUrl(clean);
+          setUrl(clean);
+          playNotificationBell();
+          toast.success("Đã nhận link video từ bộ nhớ tạm!");
+          void handleAnalyze(clean);
         }
       } catch {}
     };
