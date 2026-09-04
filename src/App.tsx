@@ -1040,6 +1040,20 @@ export default function App() {
                     onStartCustomBatch={handleStartBatchDownload}
                     onStartSingleDownload={handleStartDownload}
                     onSelectFolder={handleSelectFolder}
+                    onOpenItem={(itemUrl) => {
+                      setUrl(itemUrl);
+                      void handleAnalyze(itemUrl);
+                    }}
+                    onSearchMore={(count) => {
+                      const rawQuery = (url || mediaInfo.url || "")
+                        .replace(/^ytsearch\d+:/, "")
+                        .replace(/^ytplaylist:/, "")
+                        .replace(/^ytchannel:/, "")
+                        .trim();
+                      const target = `ytsearch${count}:${rawQuery}`;
+                      setUrl(target);
+                      void handleAnalyze(target);
+                    }}
                   />
                 ) : (
                   <div className="space-y-4">

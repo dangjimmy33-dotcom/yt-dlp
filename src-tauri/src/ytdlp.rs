@@ -40,6 +40,9 @@ pub struct PlaylistEntry {
     pub duration: Option<f64>,
     pub uploader: Option<String>,
     pub thumbnail: Option<String>,
+    pub is_playlist: Option<bool>,
+    pub playlist_count: Option<usize>,
+    pub entry_type: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -352,14 +355,37 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
     }
 
     let trimmed = url.trim();
-    let is_search = !trimmed.starts_with("http://")
-        && !trimmed.starts_with("https://")
-        && !trimmed.starts_with("ytsearch");
+    let is_playlist_search = trimmed.starts_with("ytplaylist:") || trimmed.starts_with("playlistsearch:");
+    let is_channel_search = trimmed.starts_with("ytchannel:") || trimmed.starts_with("channelsearch:");
+    let is_raw_ytsearch = trimmed.starts_with("ytsearch");
+    let is_http = trimmed.starts_with("http://") || trimmed.starts_with("https://");
 
-    let query_target = if is_search {
-        format!("ytsearch30:{}", trimmed)
+    let is_search = !is_http || is_playlist_search || is_channel_search || is_raw_ytsearch || trimmed.contains("&sp=EgIQAw") || trimmed.contains("&sp=EgIQAg");
+
+    let (query_target, display_search_title) = if is_playlist_search {
+        let q = trimmed.split_once(':').map(|x| x.1).unwrap_or(trimmed).trim();
+        let encoded: String = url::form_urlencoded::byte_serialize(q.as_bytes()).collect();
+        (
+            format!("https://www.youtube.com/results?search_query={}&sp=EgIQAw%253D%253D", encoded),
+            format!("Danh sách phát cho: \"{}\"", q)
+        )
+    } else if is_channel_search {
+        let q = trimmed.split_once(':').map(|x| x.1).unwrap_or(trimmed).trim();
+        let encoded: String = url::form_urlencoded::byte_serialize(q.as_bytes()).collect();
+        (
+            format!("https://www.youtube.com/results?search_query={}&sp=EgIQAg%253D%253D", encoded),
+            format!("Kênh YouTube cho: \"{}\"", q)
+        )
+    } else if is_raw_ytsearch {
+        let q = trimmed.split_once(':').map(|x| x.1).unwrap_or(trimmed).trim();
+        (trimmed.to_string(), format!("Kết quả tìm kiếm video: \"{}\"", q))
+    } else if !is_http {
+        (
+            format!("ytsearch50:{}", trimmed),
+            format!("Kết quả tìm kiếm: \"{}\"", trimmed)
+        )
     } else {
-        trimmed.to_string()
+        (trimmed.to_string(), String::new())
     };
 
     let referer = if !is_search {
@@ -444,18 +470,43 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
                     .unwrap_or("")
                     .to_string();
 
+                let is_entry_playlist = full_url.contains("/playlist?list=")
+                    || entry.get("playlist_count").is_some()
+                    || entry.get("_type").and_then(|v| v.as_str()) == Some("playlist");
+
+                let is_entry_channel = full_url.contains("/channel/")
+                    || full_url.contains("/@")
+                    || entry.get("_type").and_then(|v| v.as_str()) == Some("channel");
+
+                let playlist_count = entry.get("playlist_count")
+                    .and_then(|v| v.as_u64())
+                    .map(|c| c as usize);
+
+                let entry_type = if is_entry_playlist {
+                    Some("playlist".to_string())
+                } else if is_entry_channel {
+                    Some("channel".to_string())
+                } else {
+                    Some("video".to_string())
+                };
+
                 entries.push(PlaylistEntry {
                     id,
                     title,
                     url: full_url,
                     duration: entry.get("duration").and_then(|v| v.as_f64()),
-                    uploader: entry.get("uploader").and_then(|v| v.as_str()).map(String::from),
+                    uploader: entry.get("uploader").or_else(|| entry.get("channel")).and_then(|v| v.as_str()).map(String::from),
                     thumbnail: if thumbnail.is_empty() { None } else { Some(thumbnail) },
+                    is_playlist: if is_entry_playlist { Some(true) } else { None },
+                    playlist_count,
+                    entry_type,
                 });
             }
         }
 
-        let playlist_title = if is_search {
+        let playlist_title = if !display_search_title.is_empty() {
+            display_search_title
+        } else if is_search {
             format!("Kết quả tìm kiếm: \"{}\"", trimmed)
         } else {
             json.get("title").and_then(|v| v.as_str()).unwrap_or("Playlist").to_string()

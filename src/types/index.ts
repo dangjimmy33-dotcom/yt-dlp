@@ -28,6 +28,9 @@ export interface PlaylistEntry {
   uploader?: string;
   thumbnail?: string;
   selected?: boolean;
+  is_playlist?: boolean;
+  playlist_count?: number;
+  entry_type?: 'video' | 'playlist' | 'channel';
 }
 
 export interface MediaInfo {

@@ -19,6 +19,9 @@ import {
   Check,
   Disc,
   Zap,
+  Scissors,
+  ExternalLink,
+  ListVideo,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -30,6 +33,8 @@ interface SearchResultsListProps {
   onStartCustomBatch: (requests: DownloadRequest[]) => void;
   onStartSingleDownload: (request: DownloadRequest) => void;
   onSelectFolder: () => void;
+  onOpenItem?: (url: string) => void;
+  onSearchMore?: (count: number) => void;
 }
 
 export const SearchResultsList: React.FC<SearchResultsListProps> = ({
@@ -38,6 +43,8 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
   onStartCustomBatch,
   onStartSingleDownload,
   onSelectFolder,
+  onOpenItem,
+  onSearchMore,
 }) => {
   const allEntries = useMemo(() => media.entries || [], [media.entries]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
@@ -321,6 +328,8 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
     return { videoCount, audioCount };
   }, [allEntries, selectedIds, itemConfigs, globalConfig]);
 
+  const isSearchMode = media.uploader === 'YouTube Search' || media.title.startsWith('Kết quả tìm kiếm') || media.title.startsWith('Danh sách phát cho');
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 15 }}
@@ -342,11 +351,11 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
             <h2 className="text-base md:text-lg font-extrabold text-slate-100 truncate flex items-center gap-2">
               <span>{media.title}</span>
               <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-[11px] text-indigo-300 font-mono">
-                {allEntries.length} video
+                {allEntries.length} mục
               </span>
             </h2>
             <p className="text-xs text-slate-400">
-              Có thể tải nhanh từng video (1080p / MP3 320k), áp dụng 1 setting cho toàn bộ hoặc chỉnh chi tiết từng tập.
+              Có thể tải nhanh từng video (1080p / MP3 320k), mở trọn bộ playlist hoặc chỉnh chi tiết từng tập.
             </p>
           </div>
         </div>
@@ -385,7 +394,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                 title="Áp dụng cấu hình này ngay cho tất cả video trong danh sách"
               >
                 <Check className="w-3.5 h-3.5" />
-                <span>⚡ Áp dụng cấu hình này cho tất cả</span>
+                <span>Áp dụng cấu hình này cho tất cả</span>
               </button>
             </div>
 
@@ -414,7 +423,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
               title="Đặt toàn bộ danh sách thành Video 1080p"
             >
               <Video className="w-3 h-3 text-indigo-400" />
-              <span>🎬 Tất cả Video 1080p</span>
+              <span>Tất cả Video 1080p</span>
             </button>
 
             <button
@@ -423,7 +432,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
               title="Đặt toàn bộ danh sách thành Video Cao Nhất (4K/2K)"
             >
               <Sparkles className="w-3 h-3 text-purple-400" />
-              <span>🎬 Tất cả Video Cao Nhất</span>
+              <span>Tất cả Video Cao Nhất</span>
             </button>
 
             <button
@@ -432,7 +441,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
               title="Đặt toàn bộ danh sách thành Nhạc MP3 320k"
             >
               <Music className="w-3 h-3 text-pink-400" />
-              <span>🎵 Tất cả Nhạc MP3 320k</span>
+              <span>Tất cả Nhạc MP3 320k</span>
             </button>
 
             <button
@@ -441,7 +450,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
               title="Đặt toàn bộ danh sách thành Nhạc Lossless FLAC"
             >
               <Disc className="w-3 h-3 text-emerald-400" />
-              <span>🎧 Tất cả FLAC Lossless</span>
+              <span>Tất cả FLAC Lossless</span>
             </button>
           </div>
         </div>
@@ -502,12 +511,14 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
         </div>
       </div>
 
-      {/* 3. VIDEO CARDS LIST WITH INDIVIDUAL PER-VIDEO FAST ACTIONS & SETTINGS */}
+      {/* 3. VIDEO / PLAYLIST CARDS LIST WITH INDIVIDUAL ACTIONS */}
       <div className="space-y-2.5 max-h-[52vh] overflow-y-auto pr-1.5 custom-scrollbar">
         {filteredEntries.map((entry, idx) => {
           const isSelected = selectedIds.has(entry.id);
           const itemCfg = itemConfigs[entry.id] || globalConfig;
           const isExpanded = expandedItemId === entry.id;
+          const isEntryPlaylist = entry.is_playlist || entry.entry_type === 'playlist' || entry.url.includes('/playlist?list=');
+          const isEntryChannel = entry.entry_type === 'channel' || entry.url.includes('/channel/') || entry.url.includes('/@');
 
           return (
             <div
@@ -546,20 +557,35 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-slate-600">
-                        <Video className="w-6 h-6" />
+                        {isEntryPlaylist ? <Layers className="w-6 h-6 text-purple-400" /> : <Video className="w-6 h-6" />}
                       </div>
                     )}
-                    {entry.duration && (
+                    {entry.duration ? (
                       <span className="absolute bottom-1 right-1 px-1.5 py-0.2 rounded bg-black/80 text-[10px] text-slate-200 font-mono font-semibold">
                         {Math.floor(entry.duration / 60)}:
                         {String(Math.floor(entry.duration % 60)).padStart(2, '0')}
+                      </span>
+                    ) : isEntryPlaylist && (
+                      <span className="absolute bottom-1 right-1 px-1.5 py-0.2 rounded bg-purple-900/90 text-[10px] text-purple-200 font-mono font-bold flex items-center gap-0.5">
+                        <Layers className="w-2.5 h-2.5" />
+                        <span>{entry.playlist_count || 'Playlist'}</span>
                       </span>
                     )}
                   </div>
 
                   <div className="min-w-0 space-y-1">
-                    <h3 className="text-xs md:text-sm font-bold text-slate-100 line-clamp-1 group-hover:text-indigo-300 transition-colors">
-                      {itemCfg.customFilename?.trim() || entry.title}
+                    <h3 className="text-xs md:text-sm font-bold text-slate-100 line-clamp-1 group-hover:text-indigo-300 transition-colors flex items-center gap-2">
+                      <span>{itemCfg.customFilename?.trim() || entry.title}</span>
+                      {isEntryPlaylist && (
+                        <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 font-semibold">
+                          Danh sách phát
+                        </span>
+                      )}
+                      {isEntryChannel && (
+                        <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-semibold">
+                          Kênh
+                        </span>
+                      )}
                     </h3>
                     <div className="flex items-center gap-2 text-[11px] text-slate-400 font-medium flex-wrap">
                       {entry.uploader && (
@@ -568,44 +594,71 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                           <span className="truncate">{entry.uploader}</span>
                         </span>
                       )}
+                      {entry.playlist_count && (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono border border-purple-500/30">
+                          {entry.playlist_count} tập / video
+                        </span>
+                      )}
                       {itemCfg.trimStart && itemCfg.trimEnd && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono border border-amber-500/30">
-                          ✂️ {itemCfg.trimStart} - {itemCfg.trimEnd}
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono border border-amber-500/30 flex items-center gap-1">
+                          <Scissors className="w-3 h-3 text-amber-400 shrink-0" />
+                          <span>{itemCfg.trimStart} - {itemCfg.trimEnd}</span>
                         </span>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* Right: Modern Glassmorphic Fast Action Controls (No raw HTML select) */}
+                {/* Right: Modern Glassmorphic Fast Action Controls */}
                 <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
-                  {/* Format pill toggle [ 🎬 Video | 🎵 Audio ] */}
-                  <div className="flex items-center p-0.5 rounded-xl bg-slate-900/90 border border-white/10 text-xs">
+                  {/* If this entry is a PLAYLIST: offer direct "Mở trọn bộ danh sách" button */}
+                  {isEntryPlaylist && onOpenItem ? (
                     <button
-                      type="button"
-                      onClick={() => updateItemConfig(entry.id, { ...itemCfg, downloadType: 'video' })}
-                      className={`flex items-center gap-1 px-2 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                        itemCfg.downloadType === 'video'
-                          ? 'bg-indigo-600/40 text-indigo-200 border border-indigo-500/50 shadow-sm'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
+                      onClick={() => onOpenItem(entry.url)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 hover:text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+                      title="Mở toàn bộ danh sách các tập của playlist này để chọn tải"
                     >
-                      <Video className="w-3 h-3" />
-                      <span>{itemCfg.quality || '1080p'}</span>
+                      <ListVideo className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Mở trọn bộ ({entry.playlist_count || 'Xem các tập'})</span>
                     </button>
+                  ) : isEntryChannel && onOpenItem ? (
                     <button
-                      type="button"
-                      onClick={() => updateItemConfig(entry.id, { ...itemCfg, downloadType: 'audio' })}
-                      className={`flex items-center gap-1 px-2 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                        itemCfg.downloadType === 'audio'
-                          ? 'bg-pink-600/40 text-pink-200 border border-pink-500/50 shadow-sm'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
+                      onClick={() => onOpenItem(`${entry.url}/playlists`)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-600/30 hover:bg-cyan-600/50 border border-cyan-500/40 text-cyan-200 hover:text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+                      title="Xem danh sách phát của kênh này"
                     >
-                      <Music className="w-3 h-3" />
-                      <span>{itemCfg.audioFormat?.toUpperCase() || 'MP3'}</span>
+                      <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Xem Playlist kênh</span>
                     </button>
-                  </div>
+                  ) : (
+                    /* Regular video format switcher pills */
+                    <div className="flex items-center p-0.5 rounded-xl bg-slate-900/90 border border-white/10 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => updateItemConfig(entry.id, { ...itemCfg, downloadType: 'video' })}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                          itemCfg.downloadType === 'video'
+                            ? 'bg-indigo-600/40 text-indigo-200 border border-indigo-500/50 shadow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <Video className="w-3 h-3" />
+                        <span>{itemCfg.quality || '1080p'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateItemConfig(entry.id, { ...itemCfg, downloadType: 'audio' })}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                          itemCfg.downloadType === 'audio'
+                            ? 'bg-pink-600/40 text-pink-200 border border-pink-500/50 shadow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <Music className="w-3 h-3" />
+                        <span>{itemCfg.audioFormat?.toUpperCase() || 'MP3'}</span>
+                      </button>
+                    </div>
+                  )}
 
                   {/* 1-Click Fast Video Download */}
                   <button
@@ -614,7 +667,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                     title={`Tải ngay Video ${itemCfg.quality || '1080p'} MP4`}
                   >
                     <Video className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>🎬 Tải Video</span>
+                    <span>Tải Video</span>
                   </button>
 
                   {/* 1-Click Fast Audio Extract */}
@@ -624,7 +677,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                     title="Tách ngay âm thanh MP3 320kbps"
                   >
                     <Music className="w-3.5 h-3.5 text-pink-400" />
-                    <span>🎵 Tách MP3</span>
+                    <span>Tách MP3</span>
                   </button>
 
                   {/* Button to toggle Per-Video Detail Editor Accordion */}
@@ -666,6 +719,19 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
             </div>
           );
         })}
+
+        {/* Load More Button for Searches */}
+        {isSearchMode && onSearchMore && (
+          <div className="pt-2 flex justify-center">
+            <button
+              onClick={() => onSearchMore(100)}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-indigo-500/40 text-xs font-semibold text-slate-300 hover:text-white transition-all cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Tải thêm kết quả (Xem 100 video)</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 4. STICKY BOTTOM ACTION BAR WITH DUAL BATCH TRIGGERS */}
@@ -682,7 +748,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
         <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-end">
           <div className="text-right mr-1">
             <div className="text-xs text-slate-300 font-bold">
-              Đã chọn: <span className="text-indigo-300">{selectedCount}</span> / {allEntries.length} video
+              Đã chọn: <span className="text-indigo-300">{selectedCount}</span> / {allEntries.length} mục
             </div>
             <div className="text-[10px] text-slate-400 font-mono">
               ({summary.videoCount} Video, {summary.audioCount} Audio)
@@ -701,7 +767,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
             title="Tách âm thanh MP3 320k cho tất cả video đã chọn"
           >
             <Music className="w-4 h-4 text-pink-200" />
-            <span>🎵 Tách {selectedCount} Audio</span>
+            <span>Tách {selectedCount} Audio</span>
           </button>
 
           {/* Batch Download Video */}
@@ -716,7 +782,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
             title="Tải toàn bộ video đã chọn với chất lượng video cao"
           >
             <Video className="w-4 h-4" />
-            <span>🎬 Tải {selectedCount} Video</span>
+            <span>Tải {selectedCount} Video</span>
           </button>
 
           {/* Batch Download Custom */}
@@ -731,7 +797,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
             title="Tải toàn bộ theo đúng cấu hình riêng đã tinh chỉnh của từng video"
           >
             <Download className="w-4 h-4 text-indigo-400" />
-            <span>🚀 Tải theo cấu hình</span>
+            <span>Tải theo cấu hình</span>
           </button>
         </div>
       </div>

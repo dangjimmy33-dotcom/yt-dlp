@@ -553,7 +553,7 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
             title={`Tách âm thanh định dạng ${selectedAudioFormat.toUpperCase()} ${selectedAudioQuality}`}
           >
             <Music className="w-4 h-4 text-pink-200" />
-            <span>🎵 Tách Nhạc ({selectedAudioFormat.toUpperCase()} {selectedAudioQuality})</span>
+            <span>Tách Nhạc ({selectedAudioFormat.toUpperCase()} {selectedAudioQuality})</span>
           </button>
 
           {/* Tải Video Button */}
@@ -563,7 +563,7 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
             title={`Tải video chất lượng ${selectedQuality} định dạng ${selectedContainer.toUpperCase()}`}
           >
             <Video className="w-4 h-4" />
-            <span>🎬 Tải Video ({selectedQuality.toUpperCase()})</span>
+            <span>Tải Video ({selectedQuality.toUpperCase()})</span>
           </button>
         </div>
       </div>
