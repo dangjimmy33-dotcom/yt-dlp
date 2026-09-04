@@ -104,22 +104,45 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
     { id: "128K", label: "128 kbps (Cơ bản)" },
   ];
 
-  const handleDownload = () => {
-    const isAudio = activeTab === "audio";
+  const handleDownloadVideo = () => {
     const req: DownloadRequest = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       url: media.url,
       title: media.title,
-      download_type: isAudio ? "audio" : "video",
+      download_type: "video",
       quality: selectedQuality,
-      video_container: isAudio ? undefined : selectedContainer,
-      video_codec: isAudio || selectedCodec === "auto" ? undefined : selectedCodec,
+      video_container: selectedContainer,
+      video_codec: selectedCodec === "auto" ? undefined : selectedCodec,
       audio_format: selectedAudioFormat,
       audio_quality: selectedAudioQuality,
-      audio_normalize: isAudio ? audioNormalize : undefined,
       output_dir: outputDir || settings.defaultDownloadDir,
       custom_filename: customFilename.trim() || undefined,
       embed_subtitles: embedSubs,
+      embed_thumbnail: embedThumb,
+      embed_metadata: embedMeta,
+      sponsorblock: sponsorBlock,
+      cookies_browser: settings.cookiesBrowser,
+      trim_start: activeTab === "trim" ? trimStart : undefined,
+      trim_end: activeTab === "trim" ? trimEnd : undefined,
+      custom_args: customArgs.trim() || undefined,
+    };
+
+    onStartDownload(req);
+  };
+
+  const handleDownloadAudio = () => {
+    const req: DownloadRequest = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      url: media.url,
+      title: `[Audio ${selectedAudioFormat.toUpperCase()}] ${media.title}`,
+      download_type: "audio",
+      quality: "best",
+      audio_format: selectedAudioFormat,
+      audio_quality: selectedAudioQuality,
+      audio_normalize: audioNormalize,
+      output_dir: outputDir || settings.defaultDownloadDir,
+      custom_filename: customFilename.trim() || undefined,
+      embed_subtitles: false,
       embed_thumbnail: embedThumb,
       embed_metadata: embedMeta,
       sponsorblock: sponsorBlock,
@@ -142,7 +165,7 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
       {/* Tab Navigation with Animated Indicator */}
       <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-950/60 border border-white/[0.06] overflow-x-auto scrollbar-none">
         {[
-          { id: "video", label: "Tải Video", icon: Video },
+          { id: "video", label: "Tùy Chỉnh Video", icon: Video },
           { id: "audio", label: "Studio Âm Thanh", icon: Music },
           { id: "trim", label: "Cắt Phân Đoạn", icon: Scissors },
           { id: "advanced", label: "Tùy Chọn Thêm", icon: Settings2 },
@@ -507,12 +530,12 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Output Directory & Action Row */}
-      <div className="pt-2 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-3">
+      {/* Output Directory & Distinct Action Buttons Row */}
+      <div className="pt-3 border-t border-white/[0.08] flex flex-col md:flex-row items-center justify-between gap-3">
         {/* Output folder selector */}
         <div
           onClick={onSelectFolder}
-          className="w-full sm:w-auto flex-1 flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950/40 hover:bg-slate-900/60 border border-white/[0.06] text-xs text-slate-300 cursor-pointer transition-colors overflow-hidden"
+          className="w-full md:w-auto flex-1 flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-950/40 hover:bg-slate-900/60 border border-white/[0.06] text-xs text-slate-300 cursor-pointer transition-colors overflow-hidden"
           title="Bấm để đổi thư mục lưu"
         >
           <Folder className="w-4 h-4 text-indigo-400 shrink-0" />
@@ -521,16 +544,31 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
           </span>
         </div>
 
-        {/* Start Download Button */}
-        <button
-          onClick={handleDownload}
-          className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-2.5 rounded-xl text-xs font-bold glass-button-primary cursor-pointer shrink-0"
-        >
-          <Download className="w-4 h-4" />
-          <span>BẮT ĐẦU TẢI NGAY</span>
-        </button>
+        {/* Dual Primary Action Buttons: Video Download & Separate Audio Download */}
+        <div className="flex items-center gap-2.5 w-full md:w-auto shrink-0 flex-wrap justify-end">
+          {/* Tách Nhạc Audio Button */}
+          <button
+            onClick={handleDownloadAudio}
+            className="flex-1 md:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 hover:opacity-95 text-white shadow-lg shadow-pink-600/25 border border-pink-500/30 transition-all cursor-pointer"
+            title={`Tách âm thanh định dạng ${selectedAudioFormat.toUpperCase()} ${selectedAudioQuality}`}
+          >
+            <Music className="w-4 h-4 text-pink-200" />
+            <span>🎵 Tách Nhạc ({selectedAudioFormat.toUpperCase()} {selectedAudioQuality})</span>
+          </button>
+
+          {/* Tải Video Button */}
+          <button
+            onClick={handleDownloadVideo}
+            className="flex-1 md:flex-initial flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold glass-button-primary shadow-lg shadow-indigo-500/30 cursor-pointer"
+            title={`Tải video chất lượng ${selectedQuality} định dạng ${selectedContainer.toUpperCase()}`}
+          >
+            <Video className="w-4 h-4" />
+            <span>🎬 Tải Video ({selectedQuality.toUpperCase()})</span>
+          </button>
+        </div>
       </div>
     </motion.div>
   );
 };
+
 

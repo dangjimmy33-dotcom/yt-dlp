@@ -18,6 +18,7 @@ import {
   Sparkles,
   Check,
   Disc,
+  Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -45,7 +46,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
 
   const [filterText, setFilterText] = useState<string>('');
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
-  const [isGlobalSettingExpanded, setIsGlobalSettingExpanded] = useState<boolean>(true);
+  const [isGlobalSettingExpanded, setIsGlobalSettingExpanded] = useState<boolean>(false);
 
   // Global Configuration that can be applied to all or used as fallback
   const [globalConfig, setGlobalConfig] = useState<FullFormatConfig>({
@@ -55,7 +56,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
     videoCodec: 'auto',
     audioFormat: settings.defaultAudioFormat || 'mp3',
     audioQuality: settings.defaultAudioQuality || '320K',
-    audioNormalize: false,
+    audioNormalize: true,
     customFilename: '',
     trimStart: '',
     trimEnd: '',
@@ -76,7 +77,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
         videoCodec: 'auto',
         audioFormat: settings.defaultAudioFormat || 'mp3',
         audioQuality: settings.defaultAudioQuality || '320K',
-        audioNormalize: false,
+        audioNormalize: true,
         customFilename: '',
         trimStart: '',
         trimEnd: '',
@@ -155,6 +156,26 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
     toast.success('Đã đồng bộ toàn bộ cài đặt chung (Format, Độ phân giải, Codec, Audio) cho tất cả video!');
   };
 
+  // Quick preset helpers
+  const handleSetAllPreset = (type: 'video' | 'audio', qualityOrFormat: string) => {
+    const updated: Record<string, FullFormatConfig> = {};
+    allEntries.forEach((e) => {
+      const current = itemConfigs[e.id] || globalConfig;
+      updated[e.id] = {
+        ...current,
+        downloadType: type,
+        quality: type === 'video' ? qualityOrFormat : current.quality,
+        audioFormat: type === 'audio' ? qualityOrFormat : current.audioFormat,
+      };
+    });
+    setItemConfigs(updated);
+    toast.success(
+      type === 'video'
+        ? `Đã chuyển toàn bộ ${allEntries.length} video sang định dạng Video ${qualityOrFormat}!`
+        : `Đã chuyển toàn bộ ${allEntries.length} video sang định dạng Âm thanh ${qualityOrFormat.toUpperCase()} 320k!`
+    );
+  };
+
   // Update a single item's config
   const updateItemConfig = (id: string, newConfig: FullFormatConfig) => {
     setItemConfigs((prev) => ({
@@ -192,41 +213,98 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
     };
   };
 
-  // Download 1 single item
-  const handleDownloadSingle = (entry: PlaylistEntry) => {
+  // 1-Click download 1 single item as Video
+  const handleQuickDownloadVideoSingle = (entry: PlaylistEntry) => {
     if (!settings.defaultDownloadDir?.trim()) {
       toast.error('Chưa chọn thư mục lưu video. Hãy chọn nơi lưu trước.');
       onSelectFolder();
       return;
     }
-
     const cfg = itemConfigs[entry.id] || globalConfig;
-    const req = createDownloadRequest(entry, cfg);
+    const videoCfg: FullFormatConfig = { ...cfg, downloadType: 'video' };
+    const req = createDownloadRequest(entry, videoCfg);
     onStartSingleDownload(req);
-    toast.success(`Bắt đầu tải: ${req.title}`);
+    toast.success(`Bắt đầu tải Video: ${entry.title}`);
+  };
+
+  // 1-Click download 1 single item as Audio
+  const handleQuickDownloadAudioSingle = (entry: PlaylistEntry) => {
+    if (!settings.defaultDownloadDir?.trim()) {
+      toast.error('Chưa chọn thư mục lưu video. Hãy chọn nơi lưu trước.');
+      onSelectFolder();
+      return;
+    }
+    const cfg = itemConfigs[entry.id] || globalConfig;
+    const audioCfg: FullFormatConfig = { ...cfg, downloadType: 'audio', audioFormat: cfg.audioFormat || 'mp3' };
+    const req = createDownloadRequest(entry, audioCfg);
+    onStartSingleDownload(req);
+    toast.success(`Bắt đầu tách nhạc MP3 320k: ${entry.title}`);
   };
 
   // Download all selected items respecting their individual configs
-  const handleStartBulkDownload = () => {
+  const handleStartBulkDownloadCustom = () => {
     if (selectedCount === 0) {
       toast.error('Vui lòng chọn ít nhất 1 video để tải.');
       return;
     }
-
     if (!settings.defaultDownloadDir?.trim()) {
       toast.error('Chưa chọn thư mục lưu video. Hãy chọn nơi lưu trước.');
       onSelectFolder();
       return;
     }
-
     const selectedEntries = allEntries.filter((e) => selectedIds.has(e.id));
     const requests = selectedEntries.map((entry) => {
       const cfg = itemConfigs[entry.id] || globalConfig;
       return createDownloadRequest(entry, cfg);
     });
-
     onStartCustomBatch(requests);
-    toast.success(`Đã thêm ${requests.length} video vào hàng đợi tải với tùy chỉnh riêng!`);
+    toast.success(`Đã thêm ${requests.length} video vào hàng đợi tải theo cấu hình riêng!`);
+  };
+
+  // 1-Click Batch Download all selected as Video
+  const handleStartBulkVideo = () => {
+    if (selectedCount === 0) {
+      toast.error('Vui lòng chọn ít nhất 1 video để tải.');
+      return;
+    }
+    if (!settings.defaultDownloadDir?.trim()) {
+      toast.error('Chưa chọn thư mục lưu video. Hãy chọn nơi lưu trước.');
+      onSelectFolder();
+      return;
+    }
+    const selectedEntries = allEntries.filter((e) => selectedIds.has(e.id));
+    const requests = selectedEntries.map((entry) => {
+      const cfg = itemConfigs[entry.id] || globalConfig;
+      return createDownloadRequest(entry, { ...cfg, downloadType: 'video', quality: globalConfig.quality || '1080p' });
+    });
+    onStartCustomBatch(requests);
+    toast.success(`Đã thêm ${requests.length} video (${globalConfig.quality}) vào hàng đợi tải!`);
+  };
+
+  // 1-Click Batch Download all selected as Audio (MP3 320k)
+  const handleStartBulkAudio = () => {
+    if (selectedCount === 0) {
+      toast.error('Vui lòng chọn ít nhất 1 video để tải.');
+      return;
+    }
+    if (!settings.defaultDownloadDir?.trim()) {
+      toast.error('Chưa chọn thư mục lưu video. Hãy chọn nơi lưu trước.');
+      onSelectFolder();
+      return;
+    }
+    const selectedEntries = allEntries.filter((e) => selectedIds.has(e.id));
+    const requests = selectedEntries.map((entry) => {
+      const cfg = itemConfigs[entry.id] || globalConfig;
+      return createDownloadRequest(entry, {
+        ...cfg,
+        downloadType: 'audio',
+        audioFormat: globalConfig.audioFormat || 'mp3',
+        audioQuality: globalConfig.audioQuality || '320K',
+        audioNormalize: true,
+      });
+    });
+    onStartCustomBatch(requests);
+    toast.success(`Đã thêm ${requests.length} bài hát (${globalConfig.audioFormat.toUpperCase()} 320k) vào hàng đợi tách nhạc!`);
   };
 
   // Summary counts
@@ -268,23 +346,25 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
               </span>
             </h2>
             <p className="text-xs text-slate-400">
-              Có thể áp dụng 1 setting cho toàn bộ video hoặc chỉnh chi tiết định dạng, cắt đoạn cho từng video riêng lẻ.
+              Có thể tải nhanh từng video (1080p / MP3 320k), áp dụng 1 setting cho toàn bộ hoặc chỉnh chi tiết từng tập.
             </p>
           </div>
         </div>
 
-        {/* Toggle Global Setting Button */}
-        <button
-          onClick={() => setIsGlobalSettingExpanded(!isGlobalSettingExpanded)}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-semibold text-slate-300 hover:text-white transition-all cursor-pointer shrink-0 self-start md:self-auto"
-        >
-          <Settings2 className="w-4 h-4 text-indigo-400" />
-          <span>{isGlobalSettingExpanded ? 'Thu gọn Cài đặt chung' : 'Mở Cài đặt chung cho tất cả'}</span>
-          {isGlobalSettingExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-        </button>
+        {/* Global Settings Trigger */}
+        <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
+          <button
+            onClick={() => setIsGlobalSettingExpanded(!isGlobalSettingExpanded)}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-semibold text-slate-300 hover:text-white transition-all cursor-pointer"
+          >
+            <Settings2 className="w-4 h-4 text-indigo-400" />
+            <span>{isGlobalSettingExpanded ? 'Thu gọn Cài đặt chung' : 'Cài đặt chung cho tất cả'}</span>
+            {isGlobalSettingExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </div>
       </div>
 
-      {/* 1. GLOBAL SETTINGS PANEL (FULL RICH FORMAT SELECTOR LIKE URL PASTE) */}
+      {/* 1. GLOBAL SETTINGS PANEL (FULL RICH FORMAT SELECTOR) */}
       <AnimatePresence>
         {isGlobalSettingExpanded && (
           <motion.div
@@ -305,7 +385,7 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                 title="Áp dụng cấu hình này ngay cho tất cả video trong danh sách"
               >
                 <Check className="w-3.5 h-3.5" />
-                <span>⚡ Áp dụng cho tất cả video</span>
+                <span>⚡ Áp dụng cấu hình này cho tất cả</span>
               </button>
             </div>
 
@@ -318,62 +398,111 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
         )}
       </AnimatePresence>
 
-      {/* 2. FILTER & RANGE TOOLBAR */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center text-xs">
-        {/* Search within results */}
-        <div className="md:col-span-6 relative">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={filterText}
-            onChange={(e) => setFilterText(e.target.value)}
-            placeholder="Lọc tiêu đề hoặc tên kênh trong danh sách..."
-            className="w-full glass-input pl-8 pr-3 py-2 rounded-xl text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none"
-          />
-        </div>
-
-        {/* Range Selector */}
-        <div className="md:col-span-6 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 text-slate-300">
-            <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-            <span>Tập:</span>
-            <input
-              type="number"
-              min={1}
-              max={allEntries.length}
-              value={fromEp}
-              onChange={(e) => setFromEp(e.target.value)}
-              className="w-14 bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-center font-mono text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-            />
-            <span>đến</span>
-            <input
-              type="number"
-              min={1}
-              max={allEntries.length}
-              value={toEp}
-              onChange={(e) => setToEp(e.target.value)}
-              className="w-14 bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-center font-mono text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-            />
-            <button
-              onClick={handleApplyRange}
-              className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 font-bold transition-all cursor-pointer"
-            >
-              Chọn khoảng
-            </button>
+      {/* 2. QUICK BATCH PRESETS & RANGE TOOLBAR */}
+      <div className="space-y-2.5 p-3 rounded-2xl bg-slate-950/40 border border-white/[0.06]">
+        {/* Quick Batch Presets Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-white/[0.04] text-xs">
+          <div className="flex items-center gap-1.5 text-slate-300 font-semibold">
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <span>Tùy chọn nhanh toàn bộ:</span>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
-              onClick={() => handleSelectAll(!isAllSelected)}
-              className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.06] font-semibold transition-all cursor-pointer"
+              onClick={() => handleSetAllPreset('video', '1080p')}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-300 text-[11px] font-bold transition-all cursor-pointer"
+              title="Đặt toàn bộ danh sách thành Video 1080p"
             >
-              {isAllSelected ? 'Bỏ chọn hết' : 'Chọn tất cả'}
+              <Video className="w-3 h-3 text-indigo-400" />
+              <span>🎬 Tất cả Video 1080p</span>
             </button>
+
+            <button
+              onClick={() => handleSetAllPreset('video', 'best')}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 text-[11px] font-bold transition-all cursor-pointer"
+              title="Đặt toàn bộ danh sách thành Video Cao Nhất (4K/2K)"
+            >
+              <Sparkles className="w-3 h-3 text-purple-400" />
+              <span>🎬 Tất cả Video Cao Nhất</span>
+            </button>
+
+            <button
+              onClick={() => handleSetAllPreset('audio', 'mp3')}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-pink-500/15 hover:bg-pink-500/30 border border-pink-500/30 text-pink-300 text-[11px] font-bold transition-all cursor-pointer"
+              title="Đặt toàn bộ danh sách thành Nhạc MP3 320k"
+            >
+              <Music className="w-3 h-3 text-pink-400" />
+              <span>🎵 Tất cả Nhạc MP3 320k</span>
+            </button>
+
+            <button
+              onClick={() => handleSetAllPreset('audio', 'flac')}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold transition-all cursor-pointer"
+              title="Đặt toàn bộ danh sách thành Nhạc Lossless FLAC"
+            >
+              <Disc className="w-3 h-3 text-emerald-400" />
+              <span>🎧 Tất cả FLAC Lossless</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Filter & Range Selector */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center text-xs">
+          {/* Search within results */}
+          <div className="md:col-span-6 relative">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              placeholder="Lọc tiêu đề hoặc tên kênh trong danh sách..."
+              className="w-full glass-input pl-8 pr-3 py-1.5 rounded-xl text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Range Selector */}
+          <div className="md:col-span-6 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 text-slate-300">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span>Tập:</span>
+              <input
+                type="number"
+                min={1}
+                max={allEntries.length}
+                value={fromEp}
+                onChange={(e) => setFromEp(e.target.value)}
+                className="w-14 bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-center font-mono text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+              />
+              <span>đến</span>
+              <input
+                type="number"
+                min={1}
+                max={allEntries.length}
+                value={toEp}
+                onChange={(e) => setToEp(e.target.value)}
+                className="w-14 bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-center font-mono text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+              />
+              <button
+                onClick={handleApplyRange}
+                className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 font-bold transition-all cursor-pointer"
+              >
+                Chọn khoảng
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => handleSelectAll(!isAllSelected)}
+                className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.06] font-semibold transition-all cursor-pointer"
+              >
+                {isAllSelected ? 'Bỏ chọn hết' : 'Chọn tất cả'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* 3. VIDEO CARDS LIST WITH INDIVIDUAL PER-VIDEO SETTINGS */}
+      {/* 3. VIDEO CARDS LIST WITH INDIVIDUAL PER-VIDEO FAST ACTIONS & SETTINGS */}
       <div className="space-y-2.5 max-h-[52vh] overflow-y-auto pr-1.5 custom-scrollbar">
         {filteredEntries.map((entry, idx) => {
           const isSelected = selectedIds.has(entry.id);
@@ -448,50 +577,60 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                   </div>
                 </div>
 
-                {/* Right: Per-Item Fast Format Selector & Action Buttons */}
+                {/* Right: Modern Glassmorphic Fast Action Controls (No raw HTML select) */}
                 <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
-                  {/* Format dropdown for THIS SPECIFIC VIDEO */}
-                  <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-white/10 text-xs">
-                    <select
-                      value={itemCfg.downloadType}
-                      onChange={(e) => updateItemConfig(entry.id, { ...itemCfg, downloadType: e.target.value as any })}
-                      className="bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer pr-1"
+                  {/* Format pill toggle [ 🎬 Video | 🎵 Audio ] */}
+                  <div className="flex items-center p-0.5 rounded-xl bg-slate-900/90 border border-white/10 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => updateItemConfig(entry.id, { ...itemCfg, downloadType: 'video' })}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                        itemCfg.downloadType === 'video'
+                          ? 'bg-indigo-600/40 text-indigo-200 border border-indigo-500/50 shadow-sm'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
                     >
-                      <option value="video" className="bg-slate-900">🎬 Video</option>
-                      <option value="audio" className="bg-slate-900">🎵 Audio</option>
-                    </select>
-
-                    {itemCfg.downloadType === 'video' ? (
-                      <select
-                        value={itemCfg.quality}
-                        onChange={(e) => updateItemConfig(entry.id, { ...itemCfg, quality: e.target.value })}
-                        className="bg-slate-800 text-xs font-bold text-indigo-300 rounded-lg px-2 py-1 border border-white/10 focus:outline-none cursor-pointer"
-                      >
-                        <option value="best">Cao nhất</option>
-                        <option value="2160p">4K</option>
-                        <option value="1440p">2K</option>
-                        <option value="1080p">1080p</option>
-                        <option value="720p">720p</option>
-                        <option value="480p">480p</option>
-                      </select>
-                    ) : (
-                      <select
-                        value={itemCfg.audioFormat}
-                        onChange={(e) => updateItemConfig(entry.id, { ...itemCfg, audioFormat: e.target.value })}
-                        className="bg-slate-800 text-xs font-bold text-pink-300 rounded-lg px-2 py-1 border border-white/10 focus:outline-none cursor-pointer"
-                      >
-                        <option value="mp3">MP3 320k</option>
-                        <option value="m4a">M4A</option>
-                        <option value="flac">FLAC</option>
-                        <option value="wav">WAV</option>
-                      </select>
-                    )}
+                      <Video className="w-3 h-3" />
+                      <span>{itemCfg.quality || '1080p'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateItemConfig(entry.id, { ...itemCfg, downloadType: 'audio' })}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                        itemCfg.downloadType === 'audio'
+                          ? 'bg-pink-600/40 text-pink-200 border border-pink-500/50 shadow-sm'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Music className="w-3 h-3" />
+                      <span>{itemCfg.audioFormat?.toUpperCase() || 'MP3'}</span>
+                    </button>
                   </div>
+
+                  {/* 1-Click Fast Video Download */}
+                  <button
+                    onClick={() => handleQuickDownloadVideoSingle(entry)}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 hover:border-indigo-500/60 text-indigo-200 hover:text-white text-xs font-bold transition-all cursor-pointer"
+                    title={`Tải ngay Video ${itemCfg.quality || '1080p'} MP4`}
+                  >
+                    <Video className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>🎬 Tải Video</span>
+                  </button>
+
+                  {/* 1-Click Fast Audio Extract */}
+                  <button
+                    onClick={() => handleQuickDownloadAudioSingle(entry)}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-pink-600/20 hover:bg-pink-600/40 border border-pink-500/30 hover:border-pink-500/60 text-pink-200 hover:text-white text-xs font-bold transition-all cursor-pointer"
+                    title="Tách ngay âm thanh MP3 320kbps"
+                  >
+                    <Music className="w-3.5 h-3.5 text-pink-400" />
+                    <span>🎵 Tách MP3</span>
+                  </button>
 
                   {/* Button to toggle Per-Video Detail Editor Accordion */}
                   <button
                     onClick={() => setExpandedItemId(isExpanded ? null : entry.id)}
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer border ${
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
                       isExpanded
                         ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
                         : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border-white/10'
@@ -501,16 +640,6 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
                     <Settings2 className="w-3.5 h-3.5 text-indigo-400" />
                     <span>Chi tiết</span>
                     {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  </button>
-
-                  {/* 1-Click Instant Download Button for this entry */}
-                  <button
-                    onClick={() => handleDownloadSingle(entry)}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-90 text-white text-[11px] font-bold transition-all cursor-pointer shadow-md shadow-indigo-600/20"
-                    title="Tải ngay video này với cấu hình đã chọn"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Tải ngay</span>
                   </button>
                 </div>
               </div>
@@ -539,8 +668,8 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
         })}
       </div>
 
-      {/* 4. STICKY BOTTOM ACTION BAR */}
-      <div className="pt-3 border-t border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-3">
+      {/* 4. STICKY BOTTOM ACTION BAR WITH DUAL BATCH TRIGGERS */}
+      <div className="pt-3 border-t border-white/[0.08] flex flex-col md:flex-row items-center justify-between gap-3">
         <button
           onClick={onSelectFolder}
           className="flex items-center gap-2 text-xs text-slate-400 hover:text-indigo-300 font-mono truncate max-w-xs cursor-pointer"
@@ -550,27 +679,59 @@ export const SearchResultsList: React.FC<SearchResultsListProps> = ({
           <span className="truncate">{settings.defaultDownloadDir || 'Chọn nơi lưu'}</span>
         </button>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-          <div className="text-right">
+        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-end">
+          <div className="text-right mr-1">
             <div className="text-xs text-slate-300 font-bold">
               Đã chọn: <span className="text-indigo-300">{selectedCount}</span> / {allEntries.length} video
             </div>
-            <div className="text-[11px] text-slate-400 font-mono">
+            <div className="text-[10px] text-slate-400 font-mono">
               ({summary.videoCount} Video, {summary.audioCount} Audio)
             </div>
           </div>
 
+          {/* Batch Extract Audio */}
           <button
-            onClick={handleStartBulkDownload}
+            onClick={handleStartBulkAudio}
             disabled={selectedCount === 0}
-            className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all shadow-xl cursor-pointer ${
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg cursor-pointer border ${
+              selectedCount === 0
+                ? 'bg-slate-800 text-slate-500 cursor-not-allowed border-white/5'
+                : 'bg-gradient-to-r from-pink-600 to-purple-600 text-white border-pink-500/30 hover:opacity-95 shadow-pink-600/25'
+            }`}
+            title="Tách âm thanh MP3 320k cho tất cả video đã chọn"
+          >
+            <Music className="w-4 h-4 text-pink-200" />
+            <span>🎵 Tách {selectedCount} Audio</span>
+          </button>
+
+          {/* Batch Download Video */}
+          <button
+            onClick={handleStartBulkVideo}
+            disabled={selectedCount === 0}
+            className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-xl cursor-pointer ${
               selectedCount === 0
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-white/5'
                 : 'bg-gradient-to-r from-indigo-500 via-purple-600 to-pink-500 text-white shadow-indigo-500/30 hover:opacity-95'
             }`}
+            title="Tải toàn bộ video đã chọn với chất lượng video cao"
           >
-            <Download className="w-4 h-4" />
-            <span>Tải {selectedCount} video đã chọn</span>
+            <Video className="w-4 h-4" />
+            <span>🎬 Tải {selectedCount} Video</span>
+          </button>
+
+          {/* Batch Download Custom */}
+          <button
+            onClick={handleStartBulkDownloadCustom}
+            disabled={selectedCount === 0}
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+              selectedCount === 0
+                ? 'bg-slate-800 text-slate-500 cursor-not-allowed border-white/5'
+                : 'bg-white/[0.05] hover:bg-white/[0.1] text-slate-200 border-white/15'
+            }`}
+            title="Tải toàn bộ theo đúng cấu hình riêng đã tinh chỉnh của từng video"
+          >
+            <Download className="w-4 h-4 text-indigo-400" />
+            <span>🚀 Tải theo cấu hình</span>
           </button>
         </div>
       </div>
