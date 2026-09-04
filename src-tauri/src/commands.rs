@@ -19,7 +19,13 @@ pub async fn fetch_media_info(
     match fetch_media_metadata(&url, cookies_browser.as_deref()).await {
         Ok(info) => Ok(info),
         Err(err) => {
-            // 2. If yt-dlp fails on the webpage URL, automatically invoke hidden browser sniffer
+            // A 403 / browser challenge cannot be solved by retrying the same URL from a hidden CLI/web request.
+            // Return a structured marker so the frontend can open the visible, interactive capture window immediately.
+            if err.starts_with("FLOWDL_BROWSER_CAPTURE_REQUIRED|") {
+                return Err(err);
+            }
+
+            // 2. For other extraction failures, try the existing hidden browser sniffer.
             if url.starts_with("http://") || url.starts_with("https://") {
                 if let Ok(sniffed) = crate::sniffer::sniff_url_stream(app.clone(), &url, 12).await {
                     // Try to probe the sniffed stream URL with yt-dlp + referer

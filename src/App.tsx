@@ -354,6 +354,28 @@ export default function App() {
     return () => window.removeEventListener("focus", checkClipboard);
   }, [url]);
 
+  const BROWSER_CAPTURE_PREFIX = "FLOWDL_BROWSER_CAPTURE_REQUIRED|";
+
+  const openBrowserCaptureForUrl = async (targetUrl: string, detail?: string) => {
+    try {
+      await invoke("open_sniffer_browser", { url: targetUrl });
+      toast.info("Trang này cần mở bằng trình duyệt tích hợp", {
+        description:
+          detail ||
+          "Phát video trong cửa sổ Bắt Link Web. Khi trang tải luồng media, Studio sẽ tự nhận và đưa vào hàng đợi.",
+      });
+    } catch (openErr: any) {
+      const message = typeof openErr === "string" ? openErr : "Không thể mở trình duyệt bắt link.";
+      toast.error(message);
+    }
+  };
+
+  const getAnalyzeErrorMessage = (err: unknown) => {
+    if (typeof err === "string") return err;
+    if (err instanceof Error) return err.message;
+    return "Không thể phân tích đường link này.";
+  };
+
   // Analyze media URL
   const handleAnalyze = async (urlToAnalyze?: string) => {
     const targetUrl = (urlToAnalyze || url).trim();
@@ -369,7 +391,19 @@ export default function App() {
       setMediaInfo(result);
       toast.success(`Đã phân tích: ${result.title}`);
     } catch (err: any) {
-      toast.error(typeof err === "string" ? err : "Không thể phân tích đường link này.");
+      const message = getAnalyzeErrorMessage(err);
+      const needsBrowser =
+        message.startsWith(BROWSER_CAPTURE_PREFIX) ||
+        /HTTP\s*Error\s*403|Cloudflare|Forbidden/i.test(message);
+
+      if (needsBrowser && /^https?:\/\//i.test(targetUrl)) {
+        const detail = message.startsWith(BROWSER_CAPTURE_PREFIX)
+          ? message.slice(BROWSER_CAPTURE_PREFIX.length).trim()
+          : "Website từ chối request của công cụ dòng lệnh. Studio đã chuyển sang chế độ trình duyệt tương tác.";
+        await openBrowserCaptureForUrl(targetUrl, detail);
+      } else {
+        toast.error(message);
+      }
     } finally {
       setIsLoading(false);
     }

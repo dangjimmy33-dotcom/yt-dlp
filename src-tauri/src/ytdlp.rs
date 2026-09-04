@@ -331,6 +331,18 @@ async fn sniff_and_extract_webpage(page_url: &str, referer: Option<&str>) -> Res
     Err("Không thể bóc tách luồng video từ trang web này".to_string())
 }
 
+fn cli_access_denied(stderr: &str) -> bool {
+    let lower = stderr.to_ascii_lowercase();
+    lower.contains("http error 403")
+        || lower.contains("403 forbidden")
+        || lower.contains("attention required! | cloudflare")
+        || lower.contains("cloudflare anti-bot challenge")
+}
+
+fn browser_capture_required_error() -> String {
+    "FLOWDL_BROWSER_CAPTURE_REQUIRED|Trang web từ chối truy cập trực tiếp từ yt-dlp (HTTP 403). Đã chuyển sang Bắt Link Web; hãy phát video trong cửa sổ trình duyệt để Studio nhận luồng mà trang thực sự tải.".to_string()
+}
+
 pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> Result<MediaInfo, String> {
     let ytdlp_path = get_ytdlp_path();
     if !ytdlp_path.exists() {
@@ -368,11 +380,18 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
     let output = cmd.output().await.map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
 
     if !output.status.success() {
+        let err_msg = String::from_utf8_lossy(&output.stderr);
+
+        // Do not keep hammering a page that explicitly rejected non-browser access.
+        // Hand the decision back to the UI so it can open the interactive WebView capture flow.
+        if cli_access_denied(&err_msg) {
+            return Err(browser_capture_required_error());
+        }
+
         if let Ok(sniffed) = sniff_and_extract_webpage(url, referer.as_deref()).await {
             return Ok(sniffed);
         }
 
-        let err_msg = String::from_utf8_lossy(&output.stderr);
         return Err(format!("yt-dlp error: {}", err_msg.trim()));
     }
 
@@ -698,6 +717,8 @@ pub async fn execute_download(
         let details = message.join("\n");
         if details.is_empty() {
             Err(format!("yt-dlp thoát với mã lỗi {:?}. Không có stderr chi tiết.", status.code()))
+        } else if req.direct_stream == Some(true) && cli_access_denied(&details) {
+            Err("Luồng media đã được phát hiện nhưng máy chủ từ chối tải ngoài phiên trình duyệt (HTTP 403). Studio sẽ không tự sao chép cookie/token hay vượt challenge. Hãy dùng nguồn/tùy chọn tải mà website cho phép, hoặc thử một URL media công khai mà bạn có quyền tải.".to_string())
         } else {
             Err(details)
         }
