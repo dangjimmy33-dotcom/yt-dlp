@@ -715,7 +715,7 @@ export default function App() {
       />
 
       {/* Main App Layout */}
-      <div className="flex-1 flex flex-col max-w-6xl w-full mx-auto p-4 md:p-6 pb-28 space-y-5 z-10 overflow-y-auto overflow-x-hidden min-h-0">
+      <div className="flex-1 flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 md:px-8 py-4 pb-28 space-y-5 z-10 overflow-y-auto overflow-x-hidden min-h-0">
         {/* Navigation Bar */}
         <div className="flex items-center justify-between gap-3 p-1.5 rounded-2xl glass-panel">
           <div className="flex items-center gap-1.5">
