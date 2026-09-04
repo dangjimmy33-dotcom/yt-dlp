@@ -13,6 +13,15 @@ pub struct EngineStatus {
     pub ffmpeg_available: bool,
     pub ffmpeg_version: String,
     pub ffmpeg_path: String,
+    pub custom_ytdlp_path: Option<String>,
+    pub custom_ffmpeg_path: Option<String>,
+    pub detected_ytdlp_paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct CustomEngineConfig {
+    pub custom_ytdlp_path: Option<String>,
+    pub custom_ffmpeg_path: Option<String>,
 }
 
 #[cfg(windows)]
@@ -35,7 +44,61 @@ pub fn get_bin_dir() -> PathBuf {
     base_dir
 }
 
+pub fn get_engine_config_file() -> PathBuf {
+    get_bin_dir().join("engine_config.json")
+}
+
+pub fn load_engine_config() -> CustomEngineConfig {
+    let path = get_engine_config_file();
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Ok(config) = serde_json::from_str::<CustomEngineConfig>(&content) {
+            return config;
+        }
+    }
+    CustomEngineConfig::default()
+}
+
+pub fn save_engine_config(config: &CustomEngineConfig) -> Result<(), String> {
+    let path = get_engine_config_file();
+    let content = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
+    std::fs::write(&path, content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn find_detected_ytdlp_paths() -> Vec<String> {
+    let mut detected = Vec::new();
+    #[cfg(windows)]
+    {
+        for p_str in &[r"E:\Programs\yt-dlp.exe", r"D:\Programs\yt-dlp.exe", r"C:\Programs\yt-dlp.exe"] {
+            let p = PathBuf::from(p_str);
+            if p.exists() {
+                detected.push(p_str.to_string());
+            }
+        }
+    }
+    if let Ok(candidates) = which_bins("yt-dlp") {
+        for p in candidates {
+            let s = p.to_string_lossy().to_string();
+            if !detected.contains(&s) {
+                detected.push(s);
+            }
+        }
+    }
+    detected
+}
+
 pub fn get_ytdlp_path() -> PathBuf {
+    let config = load_engine_config();
+    if let Some(custom) = config.custom_ytdlp_path {
+        let trimmed = custom.trim();
+        if !trimmed.is_empty() {
+            let p = PathBuf::from(trimmed);
+            if p.exists() {
+                return p;
+            }
+        }
+    }
+
     let local_cli = get_bin_dir().join(if cfg!(windows) { "yt-dlp-cli.exe" } else { "yt-dlp-cli" });
     if local_cli.exists() {
         return local_cli;
@@ -44,6 +107,16 @@ pub fn get_ytdlp_path() -> PathBuf {
     let local_standard = get_bin_dir().join(if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" });
     if local_standard.exists() {
         return local_standard;
+    }
+
+    #[cfg(windows)]
+    {
+        for p_str in &[r"E:\Programs\yt-dlp.exe", r"D:\Programs\yt-dlp.exe", r"C:\Programs\yt-dlp.exe"] {
+            let p = PathBuf::from(p_str);
+            if p.exists() {
+                return p;
+            }
+        }
     }
 
     let current_exe = std::env::current_exe().ok().and_then(|p| p.canonicalize().ok());
@@ -64,9 +137,30 @@ pub fn get_ytdlp_path() -> PathBuf {
 }
 
 pub fn get_ffmpeg_path() -> Option<PathBuf> {
+    let config = load_engine_config();
+    if let Some(custom) = config.custom_ffmpeg_path {
+        let trimmed = custom.trim();
+        if !trimmed.is_empty() {
+            let p = PathBuf::from(trimmed);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+
     let local_path = get_bin_dir().join(if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" });
     if local_path.exists() {
         return Some(local_path);
+    }
+
+    #[cfg(windows)]
+    {
+        for p_str in &[r"E:\Programs\ffmpeg.exe", r"D:\Programs\ffmpeg.exe", r"C:\ffmpeg\bin\ffmpeg.exe"] {
+            let p = PathBuf::from(p_str);
+            if p.exists() {
+                return Some(p);
+            }
+        }
     }
 
     let current_exe = std::env::current_exe().ok().and_then(|p| p.canonicalize().ok());
@@ -123,6 +217,7 @@ fn probe_version(path: &Path, arg: &str) -> Option<String> {
 }
 
 pub fn check_status() -> EngineStatus {
+    let config = load_engine_config();
     let ytdlp_p = get_ytdlp_path();
     let ytdlp_version = if ytdlp_p.exists() {
         probe_version(&ytdlp_p, "--version")
@@ -144,6 +239,9 @@ pub fn check_status() -> EngineStatus {
         ffmpeg_path: ffmpeg_p
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default(),
+        custom_ytdlp_path: config.custom_ytdlp_path,
+        custom_ffmpeg_path: config.custom_ffmpeg_path,
+        detected_ytdlp_paths: find_detected_ytdlp_paths(),
     }
 }
 

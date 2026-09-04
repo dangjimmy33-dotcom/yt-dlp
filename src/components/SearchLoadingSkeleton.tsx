@@ -53,7 +53,15 @@ export const SearchLoadingSkeleton: React.FC<SearchLoadingSkeletonProps> = ({ qu
                 <span className="truncate">
                   {displayQuery ? (
                     <>
-                      Truy vấn: <strong className="text-indigo-300 font-bold">&quot;{displayQuery}&quot;</strong>
+                      {query && (query.startsWith('http://') || query.startsWith('https://')) ? (
+                        <>
+                          Liên kết: <strong className="text-indigo-300 font-bold">&quot;{displayQuery}&quot;</strong>
+                        </>
+                      ) : (
+                        <>
+                          Từ khóa: <strong className="text-indigo-300 font-bold">&quot;{displayQuery}&quot;</strong>
+                        </>
+                      )}
                     </>
                   ) : (
                     'Đang phân tích đường dẫn media...'
@@ -76,7 +84,11 @@ export const SearchLoadingSkeleton: React.FC<SearchLoadingSkeletonProps> = ({ qu
         <div className="mt-4 pt-4 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-slate-400">
           <span className="flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-pink-400" />
-            <span>Tự động nhận diện kênh, danh sách phát và video theo chuẩn YouTube</span>
+            <span>
+              {query && (query.startsWith('http://') || query.startsWith('https://'))
+                ? 'Đang kết nối và bóc tách dữ liệu media đa nền tảng (+1800 website)'
+                : 'Tự động nhận diện kênh, danh sách phát và video phù hợp'}
+            </span>
           </span>
           <span className="font-mono text-indigo-300 text-[10px]">Tốc độ cao ~ 1.5s</span>
         </div>

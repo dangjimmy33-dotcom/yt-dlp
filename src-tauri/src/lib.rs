@@ -59,7 +59,8 @@ pub fn run() {
             toggle_custom_site_domain,
             remove_custom_site_domain,
             open_sniffer_browser,
-            get_supported_extractors
+            get_supported_extractors,
+            set_custom_engine_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

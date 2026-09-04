@@ -27,7 +27,7 @@ pub async fn fetch_media_info(
 
             // 2. For other extraction failures, try the existing hidden browser sniffer.
             if url.starts_with("http://") || url.starts_with("https://") {
-                if let Ok(sniffed) = crate::sniffer::sniff_url_stream(app.clone(), &url, 12).await {
+                if let Ok(sniffed) = crate::sniffer::sniff_url_stream(app.clone(), &url, 8).await {
                     // Try to probe the sniffed stream URL with yt-dlp + referer
                     if let Ok(mut stream_info) = fetch_media_metadata(&sniffed.stream_url, cookies_browser.as_deref()).await {
                         if stream_info.title.is_empty() || stream_info.title == "Untitled" {
@@ -76,6 +76,10 @@ pub async fn fetch_media_info(
                         entries: None,
                     });
                 }
+
+                // If sniffer didn't find a direct stream, return fallback direct media info
+                // so the user can still proceed with downloading!
+                return Ok(crate::ytdlp::create_fallback_direct_mediainfo(&url));
             }
             Err(err)
         }
@@ -374,5 +378,17 @@ pub fn open_plugins_folder() -> Result<(), String> {
 #[tauri::command]
 pub async fn get_supported_extractors() -> Result<Vec<String>, String> {
     list_extractors().await
+}
+
+#[tauri::command]
+pub fn set_custom_engine_path(
+    custom_ytdlp: Option<String>,
+    custom_ffmpeg: Option<String>,
+) -> Result<EngineStatus, String> {
+    let mut config = crate::engine_manager::load_engine_config();
+    config.custom_ytdlp_path = custom_ytdlp.filter(|s| !s.trim().is_empty());
+    config.custom_ffmpeg_path = custom_ffmpeg.filter(|s| !s.trim().is_empty());
+    crate::engine_manager::save_engine_config(&config)?;
+    Ok(check_status())
 }
 

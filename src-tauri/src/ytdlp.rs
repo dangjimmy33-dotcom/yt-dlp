@@ -219,6 +219,7 @@ pub fn parse_single_video_json(json: &serde_json::Value, fallback_url: &str) -> 
 
 async fn sniff_and_extract_webpage(page_url: &str, referer: Option<&str>) -> Result<MediaInfo, String> {
     let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(6))
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| e.to_string())?;
@@ -270,6 +271,10 @@ async fn sniff_and_extract_webpage(page_url: &str, referer: Option<&str>) -> Res
         let mut cmd = Command::new(&ytdlp_path);
         cmd.arg("--dump-single-json")
             .arg("--no-warnings")
+            .arg("--socket-timeout")
+            .arg("6")
+            .arg("--retries")
+            .arg("1")
             .arg("--js-runtimes")
             .arg("node")
             .arg(&stream);
@@ -285,7 +290,7 @@ async fn sniff_and_extract_webpage(page_url: &str, referer: Option<&str>) -> Res
         #[cfg(windows)]
         cmd.creation_flags(0x0800_0000);
 
-        if let Ok(output) = cmd.output().await {
+        if let Ok(Ok(output)) = tokio::time::timeout(std::time::Duration::from_secs(8), cmd.output()).await {
             if output.status.success() {
                 let stdout_str = String::from_utf8_lossy(&output.stdout);
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout_str) {
@@ -338,6 +343,92 @@ async fn sniff_and_extract_webpage(page_url: &str, referer: Option<&str>) -> Res
     }
 
     Err("Không thể bóc tách luồng video từ trang web này".to_string())
+}
+
+pub fn create_fallback_direct_mediainfo(url: &str) -> MediaInfo {
+    let parsed_url = url::Url::parse(url).ok();
+    let host = parsed_url
+        .as_ref()
+        .and_then(|u| u.host_str())
+        .unwrap_or("Media Trực Tiếp")
+        .to_string();
+
+    let path = parsed_url.as_ref().map(|u| u.path()).unwrap_or("");
+    let last_segment = path.split('/').filter(|s| !s.is_empty()).last().unwrap_or("");
+    let clean_title = if !last_segment.is_empty() && last_segment != host {
+        last_segment.replace(['-', '_'], " ")
+    } else {
+        format!("Media từ {}", host)
+    };
+
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    url.hash(&mut hasher);
+    let hash_id = hasher.finish();
+
+    MediaInfo {
+        id: format!("direct_{:x}", hash_id),
+        title: clean_title,
+        url: url.to_string(),
+        thumbnail: String::new(),
+        duration: 0.0,
+        duration_str: "--:--".to_string(),
+        uploader: host.clone(),
+        channel_url: parsed_url.as_ref().map(|u| format!("{}://{}", u.scheme(), host)),
+        view_count: None,
+        description: Some("Không thể quét trước ảnh đại diện hoặc cấu trúc chi tiết (do trang web bảo mật hoặc mạng chậm). Hệ thống đã tự động chuyển sang chế độ tải trực tiếp với yt-dlp.".to_string()),
+        formats: vec![
+            VideoFormat {
+                format_id: "best".to_string(),
+                ext: "mp4".to_string(),
+                resolution: Some("Tốt nhất (Tự động)".to_string()),
+                width: None,
+                height: Some(1080),
+                fps: None,
+                filesize: None,
+                filesize_approx: None,
+                vcodec: Some("auto".to_string()),
+                acodec: Some("auto".to_string()),
+                format_note: Some("Tự động chọn định dạng chất lượng tốt nhất khi tải".to_string()),
+                is_video: true,
+                is_audio: true,
+            },
+            VideoFormat {
+                format_id: "bestvideo+bestaudio/best".to_string(),
+                ext: "mp4".to_string(),
+                resolution: Some("Gốc Full Video + Audio".to_string()),
+                width: None,
+                height: Some(1080),
+                fps: None,
+                filesize: None,
+                filesize_approx: None,
+                vcodec: Some("auto".to_string()),
+                acodec: Some("auto".to_string()),
+                format_note: Some("Tải ghép luồng hình ảnh và âm thanh cao nhất".to_string()),
+                is_video: true,
+                is_audio: true,
+            },
+            VideoFormat {
+                format_id: "bestaudio/best".to_string(),
+                ext: "mp3".to_string(),
+                resolution: Some("Tách nhạc (Chỉ Audio)".to_string()),
+                width: None,
+                height: None,
+                fps: None,
+                filesize: None,
+                filesize_approx: None,
+                vcodec: None,
+                acodec: Some("mp3".to_string()),
+                format_note: Some("Trích xuất riêng file âm thanh MP3/FLAC".to_string()),
+                is_video: false,
+                is_audio: true,
+            },
+        ],
+        subtitles: Vec::new(),
+        is_playlist: false,
+        playlist_count: None,
+        entries: None,
+    }
 }
 
 fn cli_access_denied(stderr: &str) -> bool {
@@ -452,10 +543,17 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
     cmd.arg("--dump-single-json")
         .arg("--no-warnings")
         .arg("--flat-playlist")
+        .arg("--socket-timeout")
+        .arg("10")
+        .arg("--retries")
+        .arg("1")
         .arg("--js-runtimes")
-        .arg("node")
-        .arg("--extractor-args")
-        .arg("youtube:player_client=android,web,ios");
+        .arg("node");
+
+    if is_search || query_target.contains("youtube.com") || query_target.contains("youtu.be") {
+        cmd.arg("--extractor-args")
+            .arg("youtube:player_client=android,web,ios");
+    }
 
     if let Some(start) = p_start {
         cmd.arg("--playlist-start").arg(start.to_string());
@@ -486,7 +584,15 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
 
-    let output = cmd.output().await.map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+    let output = match tokio::time::timeout(std::time::Duration::from_secs(12), cmd.output()).await {
+        Ok(res) => res.map_err(|e| format!("Failed to run yt-dlp: {}", e))?,
+        Err(_) => {
+            if is_http {
+                return Ok(create_fallback_direct_mediainfo(url));
+            }
+            return Err("Quá thời gian chờ phản hồi từ máy chủ (Timeout 12s).".to_string());
+        }
+    };
 
     if !output.status.success() {
         let err_msg = String::from_utf8_lossy(&output.stderr);
@@ -499,6 +605,10 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
 
         if let Ok(sniffed) = sniff_and_extract_webpage(url, referer.as_deref()).await {
             return Ok(sniffed);
+        }
+
+        if is_http {
+            return Ok(create_fallback_direct_mediainfo(url));
         }
 
         return Err(format!("yt-dlp error: {}", err_msg.trim()));
@@ -661,7 +771,10 @@ pub async fn execute_download(
 
     let mut cmd = Command::new(&ytdlp_path);
     cmd.arg("--js-runtimes").arg("node");
-    cmd.arg("--extractor-args").arg("youtube:player_client=android,web,ios");
+    if req.url.contains("youtube.com") || req.url.contains("youtu.be") {
+        cmd.arg("--extractor-args").arg("youtube:player_client=android,web,ios");
+    }
+    cmd.arg("--no-abort-on-error");
 
     let plugins_dir = crate::plugins::get_plugins_dir();
     if plugins_dir.exists() {

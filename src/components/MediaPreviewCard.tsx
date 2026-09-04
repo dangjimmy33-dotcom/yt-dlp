@@ -6,11 +6,13 @@ import { motion } from "framer-motion";
 interface MediaPreviewCardProps {
   media: MediaInfo;
   onOpenPlaylistModal?: () => void;
+  onOpenSnifferBrowser?: (url: string) => void;
 }
 
 export const MediaPreviewCard: React.FC<MediaPreviewCardProps> = ({
   media,
   onOpenPlaylistModal,
+  onOpenSnifferBrowser,
 }) => {
   const formatViews = (views?: number) => {
     if (!views) return null;
@@ -52,8 +54,10 @@ export const MediaPreviewCard: React.FC<MediaPreviewCardProps> = ({
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-slate-900 text-slate-600">
-              <Play className="w-12 h-12 opacity-40" />
+            <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-indigo-950/40 to-slate-900 text-slate-400 p-3 text-center">
+              <Play className="w-10 h-10 text-indigo-400 mb-1.5 opacity-80" />
+              <span className="text-xs font-bold text-slate-200">Media Trực Tiếp</span>
+              <span className="text-[10px] text-slate-400 mt-0.5">Không có ảnh đại diện</span>
             </div>
           )}
 
@@ -111,6 +115,18 @@ export const MediaPreviewCard: React.FC<MediaPreviewCardProps> = ({
               >
                 <Layers className="w-3.5 h-3.5 text-indigo-400" />
                 <span>Xem danh sách ({media.playlist_count} video)</span>
+              </button>
+            )}
+
+            {/* Sniffer Browser Button for direct web links */}
+            {onOpenSnifferBrowser && media.url.startsWith("http") && (
+              <button
+                onClick={() => onOpenSnifferBrowser(media.url)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 font-medium transition-all cursor-pointer text-xs"
+                title="Mở video trong cửa sổ Bắt Link Web để quét luồng trực tiếp nếu web chặn bot"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Bắt Link Web (Sniffer Browser)</span>
               </button>
             )}
           </div>

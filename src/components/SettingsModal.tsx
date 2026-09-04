@@ -22,6 +22,7 @@ import {
   Check,
   ChevronDown,
   Boxes,
+  Cpu,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -32,6 +33,7 @@ interface SettingsModalProps {
   onSaveSettings: (settings: AppSettings) => void;
   onSelectFolder?: () => void;
   onOpenPlugins?: () => void;
+  onOpenEngineModal?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -40,6 +42,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   settings,
   onSaveSettings,
   onOpenPlugins,
+  onOpenEngineModal,
 }) => {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
   const [isBrowserDropdownOpen, setIsBrowserDropdownOpen] = useState(false);
@@ -407,6 +410,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <Boxes className="w-3.5 h-3.5" />
                   <span>Quản lý</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Engine & Custom Path Section */}
+          {onOpenEngineModal && (
+            <div className="space-y-2.5 pt-2 border-t border-white/[0.06]">
+              <span className="text-xs font-bold text-slate-300 block flex items-center gap-1.5">
+                <Cpu className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Engine & Phiên Bản</span>
+              </span>
+
+              <div className="p-3 rounded-2xl bg-indigo-950/20 border border-indigo-500/20 flex items-center justify-between text-xs">
+                <div>
+                  <span className="font-semibold text-slate-200 block">yt-dlp & FFmpeg Dependencies</span>
+                  <span className="text-[11px] text-slate-400 block">Tùy chỉnh đường dẫn file exe (như E:\Programs\yt-dlp.exe), cập nhật engine</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenEngineModal();
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-200 text-xs font-bold transition-all cursor-pointer"
+                >
+                  <Cpu className="w-3.5 h-3.5" />
+                  <span>Cấu hình Engine</span>
                 </button>
               </div>
             </div>

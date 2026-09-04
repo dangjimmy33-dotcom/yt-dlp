@@ -1075,6 +1075,7 @@ export default function App() {
                     <MediaPreviewCard
                       media={mediaInfo}
                       onOpenPlaylistModal={() => setIsPlaylistModalOpen(true)}
+                      onOpenSnifferBrowser={(targetUrl) => openBrowserCaptureForUrl(targetUrl)}
                     />
 
                     <FormatSelector
@@ -1152,6 +1153,7 @@ export default function App() {
         settings={settings}
         onSaveSettings={handleSaveSettings}
         onOpenPlugins={() => setIsPluginModalOpen(true)}
+        onOpenEngineModal={handleOpenEngineModal}
       />
 
       <EngineStatusModal
@@ -1162,6 +1164,7 @@ export default function App() {
         onInstallFfmpeg={handleInstallFfmpeg}
         isUpdating={isUpdatingEngine}
         isInstallingFfmpeg={isInstallingFfmpeg}
+        onRefreshStatus={refreshEngineStatus}
       />
 
       <UpdateNotificationModal

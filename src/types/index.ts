@@ -143,6 +143,9 @@ export interface EngineStatus {
   ffmpeg_available: boolean;
   ffmpeg_version: string;
   ffmpeg_path: string;
+  custom_ytdlp_path?: string;
+  custom_ffmpeg_path?: string;
+  detected_ytdlp_paths?: string[];
 }
 
 export interface CustomDomainRule {
