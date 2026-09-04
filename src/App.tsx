@@ -48,6 +48,8 @@ import {
   Music,
   Search,
   Boxes,
+  Compass,
+  Globe,
 } from "lucide-react";
 
 export default function App() {
@@ -291,8 +293,35 @@ export default function App() {
 
     setupListener();
 
+    // Listen for live stream sniffed events from background or sniffer browser
+    let unlistenSniffer: (() => void) | undefined;
+    const setupSnifferListener = async () => {
+      try {
+        unlistenSniffer = await listen<{
+          stream_url: string;
+          page_url: string;
+          page_title: string;
+          source_type: string;
+        }>("on-sniffed-stream", (event) => {
+          const payload = event.payload;
+          if (payload && payload.stream_url) {
+            playNotificationBell();
+            toast.success(`Đã bắt được luồng video: ${payload.page_title || "Video Stream"}`, {
+              description: payload.stream_url.slice(0, 60) + "...",
+            });
+            setUrl(payload.stream_url);
+            void handleAnalyze(payload.stream_url);
+          }
+        });
+      } catch (e) {
+        console.error("Failed to listen to on-sniffed-stream events:", e);
+      }
+    };
+    setupSnifferListener();
+
     return () => {
       if (unlisten) unlisten();
+      if (unlistenSniffer) unlistenSniffer();
     };
   }, []);
 
@@ -658,6 +687,18 @@ export default function App() {
             >
               <Boxes className="w-3.5 h-3.5 text-purple-400" />
               <span>Thêm Web</span>
+            </button>
+
+            <button
+              onClick={() => {
+                void invoke("open_sniffer_browser", { url: url || "https://google.com" });
+                toast.info("Đang mở Trình duyệt bắt luồng video...");
+              }}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-white/[0.04] transition-all cursor-pointer"
+              title="Mở trình duyệt bắt luồng video (Bypass Cloudflare & player iframe)"
+            >
+              <Compass className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Bắt Link Web</span>
             </button>
           </div>
 

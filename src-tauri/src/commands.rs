@@ -3,7 +3,7 @@ use crate::engine_manager::{
 };
 use crate::ytdlp::{
     execute_download, fetch_media_metadata, DownloadManager, DownloadProgressEvent, DownloadRequest,
-    MediaInfo,
+    MediaInfo, VideoFormat,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -11,10 +11,94 @@ use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command]
 pub async fn fetch_media_info(
+    app: AppHandle,
     url: String,
     cookies_browser: Option<String>,
 ) -> Result<MediaInfo, String> {
-    fetch_media_metadata(&url, cookies_browser.as_deref()).await
+    // 1. Try standard yt-dlp first
+    match fetch_media_metadata(&url, cookies_browser.as_deref()).await {
+        Ok(info) => Ok(info),
+        Err(err) => {
+            // 2. If yt-dlp fails on the webpage URL, automatically invoke hidden browser sniffer
+            if url.starts_with("http://") || url.starts_with("https://") {
+                if let Ok(sniffed) = crate::sniffer::sniff_url_stream(app.clone(), &url, 12).await {
+                    // Try to probe the sniffed stream URL with yt-dlp + referer
+                    if let Ok(mut stream_info) = fetch_media_metadata(&sniffed.stream_url, cookies_browser.as_deref()).await {
+                        if stream_info.title.is_empty() || stream_info.title == "Untitled" {
+                            stream_info.title = sniffed.page_title;
+                        }
+                        stream_info.uploader = url.clone();
+                        return Ok(stream_info);
+                    }
+
+                    // Fallback to direct media info if yt-dlp doesn't dump JSON for this stream
+                    return Ok(MediaInfo {
+                        id: format!("sniffed_{}", sniffed.stream_url.len()),
+                        title: if !sniffed.page_title.is_empty() {
+                            sniffed.page_title
+                        } else {
+                            "Bóc tách luồng thành công".to_string()
+                        },
+                        url: sniffed.stream_url,
+                        thumbnail: String::new(),
+                        duration: 0.0,
+                        duration_str: "--:--".to_string(),
+                        uploader: url,
+                        channel_url: None,
+                        view_count: None,
+                        description: Some(format!("Tự động bóc tách luồng ({})", sniffed.source_type)),
+                        formats: vec![
+                            VideoFormat {
+                                format_id: "auto".to_string(),
+                                ext: "mp4".to_string(),
+                                resolution: Some("HD / Tốt nhất".to_string()),
+                                width: None,
+                                height: Some(1080),
+                                fps: None,
+                                filesize: None,
+                                filesize_approx: None,
+                                vcodec: Some("auto".to_string()),
+                                acodec: Some("auto".to_string()),
+                                format_note: Some("Luồng video HLS / Direct Stream".to_string()),
+                                is_video: true,
+                                is_audio: true,
+                            }
+                        ],
+                        subtitles: Vec::new(),
+                        is_playlist: false,
+                        playlist_count: None,
+                        entries: None,
+                    });
+                }
+            }
+            Err(err)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn open_sniffer_browser(app: AppHandle, url: Option<String>) -> Result<(), String> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    let target_url = url.unwrap_or_else(|| "https://google.com".to_string());
+    let parsed = url::Url::parse(&target_url)
+        .map_err(|e| format!("URL không hợp lệ: {e}"))?;
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let label = format!("browser_{now_ms}");
+
+    let _win = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed))
+        .title("Trình duyệt bắt luồng Video - YT-DLP Studio")
+        .inner_size(1180.0, 780.0)
+        .center()
+        .initialization_script(crate::sniffer::SNIFFER_INJECTION_SCRIPT)
+        .build()
+        .map_err(|e| format!("Không thể mở trình duyệt bắt luồng: {e}"))?;
+
+    Ok(())
 }
 
 #[tauri::command]

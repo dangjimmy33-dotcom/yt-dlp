@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod engine_manager;
 pub mod plugins;
+pub mod sniffer;
 pub mod ytdlp;
 
 use commands::*;
@@ -56,7 +57,8 @@ pub fn run() {
             get_custom_domains,
             add_custom_site_domain,
             toggle_custom_site_domain,
-            remove_custom_site_domain
+            remove_custom_site_domain,
+            open_sniffer_browser
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
