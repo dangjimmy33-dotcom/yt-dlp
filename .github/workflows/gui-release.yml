@@ -39,6 +39,6 @@ jobs:
         with:
           tagName: FlowDL-v__VERSION__
           releaseName: "FlowDL v__VERSION__ - Modern Glassmorphism yt-dlp GUI"
-          releaseBody: "✨ Download the latest FlowDL Windows installer and standalone executable below!"
+          releaseBody: "Download the latest FlowDL Windows installer and standalone executable below."
           releaseDraft: false
           prerelease: false

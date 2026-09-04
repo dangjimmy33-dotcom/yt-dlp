@@ -80,7 +80,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                   Thông Tin & Hướng Dẫn Sử Dụng
                 </h2>
                 <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                  v0.1.0
+                  v1.1.0
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">

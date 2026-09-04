@@ -35,6 +35,7 @@ import { AboutModal } from "./components/AboutModal";
 
 import { playNotificationBell, playSuccessChime } from "./utils/sound";
 import { checkForGithubUpdates, GithubReleaseInfo } from "./utils/updater";
+import { checkYtdlpEngineUpdate } from "./utils/engineAutoUpdater";
 
 import {
   Download,
@@ -86,41 +87,36 @@ export default function App() {
   });
 
   const [settings, setSettings] = useState<AppSettings>(() => {
+    const defaultSettings: AppSettings = {
+      defaultDownloadDir: "",
+      maxConcurrentDownloads: 3,
+      defaultVideoQuality: "1080p",
+      defaultAudioFormat: "mp3",
+      defaultAudioQuality: "320K",
+      embedMetadata: true,
+      embedThumbnail: true,
+      embedSubtitles: false,
+      sponsorBlock: false,
+      cookiesBrowser: "none",
+      speedLimit: "",
+      theme: "dark",
+      notifications: true,
+      autoUpdateEngine: true,
+    };
+
     try {
       const saved = localStorage.getItem("flowdl_settings");
-      return saved
-        ? JSON.parse(saved)
-        : {
-            defaultDownloadDir: "",
-            maxConcurrentDownloads: 3,
-            defaultVideoQuality: "1080p",
-            defaultAudioFormat: "mp3",
-            defaultAudioQuality: "320K",
-            embedMetadata: true,
-            embedThumbnail: true,
-            embedSubtitles: false,
-            sponsorBlock: false,
-            cookiesBrowser: "none",
-            speedLimit: "",
-            theme: "dark",
-            notifications: true,
-          };
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...defaultSettings,
+          ...parsed,
+          autoUpdateEngine: parsed.autoUpdateEngine !== undefined ? parsed.autoUpdateEngine : true,
+        };
+      }
+      return defaultSettings;
     } catch {
-      return {
-        defaultDownloadDir: "",
-        maxConcurrentDownloads: 3,
-        defaultVideoQuality: "1080p",
-        defaultAudioFormat: "mp3",
-        defaultAudioQuality: "320K",
-        embedMetadata: true,
-        embedThumbnail: true,
-        embedSubtitles: false,
-        sponsorBlock: false,
-        cookiesBrowser: "none",
-        speedLimit: "",
-        theme: "dark",
-        notifications: true,
-      };
+      return defaultSettings;
     }
   });
 
@@ -216,15 +212,41 @@ export default function App() {
       }
     };
 
+    const checkEngine = async () => {
+      try {
+        const currentStatus = await refreshEngineStatus();
+        if (settings.autoUpdateEngine) {
+          const checkRes = await checkYtdlpEngineUpdate(currentStatus?.ytdlp_version);
+          if (checkRes && checkRes.hasNewVersion) {
+            toast.info(`Phát hiện bản yt-dlp mới (${checkRes.latestVersion}), đang tự động cập nhật...`);
+            setIsUpdatingEngine(true);
+            try {
+              await invoke("update_engine");
+              const updatedStatus = await refreshEngineStatus();
+              toast.success(`Đã tự động cập nhật yt-dlp lên bản mới nhất (${updatedStatus.ytdlp_version})`);
+            } catch (err: any) {
+              console.warn("Auto update engine error:", err);
+            } finally {
+              setIsUpdatingEngine(false);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Engine check error:", err);
+      }
+    };
+
     // Check 2 seconds after mount, and every 15 minutes
     const initialTimer = window.setTimeout(checkUpdates, 2000);
+    const engineTimer = window.setTimeout(checkEngine, 3500);
     const intervalTimer = window.setInterval(checkUpdates, 15 * 60 * 1000);
 
     return () => {
       window.clearTimeout(initialTimer);
+      window.clearTimeout(engineTimer);
       window.clearInterval(intervalTimer);
     };
-  }, []);
+  }, [settings.autoUpdateEngine]);
 
   const refreshEngineStatus = async () => {
     const status = await invoke<EngineStatus>("get_engine_status");

@@ -134,6 +134,7 @@ export interface AppSettings {
   speedLimit: string;
   theme: 'dark' | 'light' | 'neon';
   notifications: boolean;
+  autoUpdateEngine: boolean;
 }
 
 export interface EngineStatus {

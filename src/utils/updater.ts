@@ -11,7 +11,7 @@ export interface GithubReleaseInfo {
   downloadUrl?: string;
 }
 
-export const CURRENT_VERSION = "v1.0.0";
+export const CURRENT_VERSION = "v1.1.0";
 export const GITHUB_REPO = "dangjimmy33-dotcom/yt-dlp";
 
 export async function checkForGithubUpdates(): Promise<GithubReleaseInfo | null> {
@@ -32,8 +32,8 @@ export async function checkForGithubUpdates(): Promise<GithubReleaseInfo | null>
 
     const data = await response.json();
     const tagName = data.tag_name || "";
-    const cleanTag = tagName.startsWith("v") ? tagName.slice(1) : tagName;
-    const currentClean = CURRENT_VERSION.startsWith("v") ? CURRENT_VERSION.slice(1) : CURRENT_VERSION;
+    const cleanTag = tagName.replace(/^[^0-9]*/, "");
+    const currentClean = CURRENT_VERSION.replace(/^[^0-9]*/, "");
 
     const hasUpdate = isNewerVersion(cleanTag, currentClean);
 

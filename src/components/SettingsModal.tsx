@@ -443,6 +443,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span>Cấu hình Engine</span>
                 </button>
               </div>
+
+              <label className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/40 border border-white/[0.06] cursor-pointer">
+                <div>
+                  <span className="font-semibold text-slate-200 block text-xs">Tự động cập nhật Engine yt-dlp khi khởi động</span>
+                  <span className="text-[11px] text-slate-400 block">Tự động tải bản yt-dlp mới nhất từ GitHub khi có phiên bản mới phát hành</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={localSettings.autoUpdateEngine ?? true}
+                  onChange={(e) =>
+                    setLocalSettings({ ...localSettings, autoUpdateEngine: e.target.checked })
+                  }
+                  className="rounded accent-indigo-500 cursor-pointer w-4 h-4 ml-3 shrink-0"
+                />
+              </label>
             </div>
           )}
 
