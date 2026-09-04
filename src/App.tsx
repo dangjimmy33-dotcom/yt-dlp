@@ -646,6 +646,21 @@ export default function App() {
                 onClearCompleted={() =>
                   setTasks((prev) => prev.filter((t) => t.status !== "completed"))
                 }
+                onClearFailedOrCancelled={() =>
+                  setTasks((prev) =>
+                    prev.filter(
+                      (t) => t.status === "downloading" || t.status === "merging" || t.status === "queued" || t.status === "completed"
+                    )
+                  )
+                }
+                onClearAll={() =>
+                  setTasks((prev) =>
+                    prev.filter(
+                      (t) => t.status === "downloading" || t.status === "merging" || t.status === "queued"
+                    )
+                  )
+                }
+                onRemoveTask={(id) => setTasks((prev) => prev.filter((t) => t.id !== id))}
                 speedData={speedData}
                 currentSpeed={currentSpeedStr}
               />

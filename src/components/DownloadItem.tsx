@@ -4,14 +4,12 @@ import {
   Download,
   CheckCircle2,
   AlertCircle,
-  Clock,
   FolderOpen,
-  Play,
   RotateCcw,
   X,
   Music,
   Video,
-  ExternalLink,
+  Trash2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -21,18 +19,22 @@ interface DownloadItemProps {
   onRetry: (task: DownloadTask) => void;
   onOpenFile: (path: string) => void;
   onOpenFolder: (path: string) => void;
+  onRemoveTask?: (id: string) => void;
 }
 
 export const DownloadItem: React.FC<DownloadItemProps> = ({
   task,
   onCancel,
   onRetry,
-  onOpenFile,
+  onOpenFile: _onOpenFile,
   onOpenFolder,
+  onRemoveTask,
 }) => {
   const isCompleted = task.status === "completed";
   const isError = task.status === "error";
+  const isCancelled = task.status === "cancelled";
   const isDownloading = task.status === "downloading" || task.status === "merging";
+  const canDelete = isCompleted || isError || isCancelled;
 
   return (
     <motion.div
@@ -65,7 +67,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
             </h4>
 
             {/* Status Badge */}
-            <div>
+            <div className="flex items-center gap-1.5 shrink-0">
               {isCompleted && (
                 <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                   <CheckCircle2 className="w-3 h-3" /> Hoàn thành
@@ -74,6 +76,11 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
               {isError && (
                 <span className="flex items-center gap-1 text-[10px] font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">
                   <AlertCircle className="w-3 h-3" /> Lỗi
+                </span>
+              )}
+              {isCancelled && (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400 bg-slate-500/10 px-2 py-0.5 rounded-full border border-slate-500/20">
+                  Đã hủy
                 </span>
               )}
               {isDownloading && (
@@ -94,7 +101,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
                 <span>•</span>
               </>
             )}
-            <span>{task.totalSize || "Đang xử lý..."}</span>
+            <span>{task.totalSize || (isCancelled ? "Đã hủy" : "Đang xử lý...")}</span>
           </div>
 
           {isError && task.errorMessage && (
@@ -124,25 +131,23 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
 
       {/* Action Buttons Row */}
       <div className="flex items-center justify-between pt-1 border-t border-white/[0.04] text-xs">
-        <span className="text-[11px] font-mono text-slate-400 truncate max-w-[240px]">
+        <span className="text-[11px] font-mono text-slate-400 truncate max-w-[240px]" title={task.outputDir}>
           {task.outputDir}
         </span>
 
         <div className="flex items-center gap-1.5">
           {isCompleted && (
-            <>
-              <button
-                onClick={() => onOpenFolder(task.outputPath || task.outputDir)}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/10 text-slate-300 hover:text-white transition-all text-[11px] font-semibold cursor-pointer"
-                title="Mở thư mục chứa file"
-              >
-                <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Mở thư mục</span>
-              </button>
-            </>
+            <button
+              onClick={() => onOpenFolder(task.outputPath || task.outputDir)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/10 text-slate-300 hover:text-white transition-all text-[11px] font-semibold cursor-pointer"
+              title="Mở thư mục chứa file"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Mở thư mục</span>
+            </button>
           )}
 
-          {isError && (
+          {(isError || isCancelled) && (
             <button
               onClick={() => onRetry(task)}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 transition-all text-[11px] font-semibold cursor-pointer"
@@ -153,10 +158,20 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
             </button>
           )}
 
+          {canDelete && onRemoveTask && (
+            <button
+              onClick={() => onRemoveTask(task.id)}
+              className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition-all cursor-pointer"
+              title="Xóa khỏi danh sách"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           {isDownloading && (
             <button
               onClick={() => onCancel(task.id)}
-              className="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-200 transition-all cursor-pointer"
+              className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-200 transition-all cursor-pointer"
               title="Hủy tải"
             >
               <X className="w-4 h-4" />
