@@ -19,6 +19,7 @@ interface UrlInputBoxProps {
   setUrl: (url: string) => void;
   onAnalyze: (urlToAnalyze?: string) => void;
   onQuickDownload?: (url: string, type: 'video' | 'audio', qualityOrFormat: string, audioQuality?: string) => void;
+  onOpenBatchModal?: () => void;
   isLoading: boolean;
 }
 
@@ -27,6 +28,7 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
   setUrl,
   onAnalyze,
   onQuickDownload,
+  onOpenBatchModal,
   isLoading,
 }) => {
   const [isFocused, setIsFocused] = useState(false);
@@ -36,6 +38,11 @@ export const UrlInputBox: React.FC<UrlInputBoxProps> = ({
       const text = await navigator.clipboard.readText();
       if (text) {
         const clean = text.trim();
+        // If multiple URLs detected in clipboard, open Batch modal
+        if (clean.includes("\n") && onOpenBatchModal) {
+          onOpenBatchModal();
+          return;
+        }
         setUrl(clean);
         if (clean.startsWith("http")) {
           onAnalyze(clean);

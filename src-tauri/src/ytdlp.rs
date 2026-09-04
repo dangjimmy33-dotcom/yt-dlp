@@ -263,6 +263,8 @@ async fn sniff_and_extract_webpage(page_url: &str, referer: Option<&str>) -> Res
         let mut cmd = Command::new(&ytdlp_path);
         cmd.arg("--dump-single-json")
             .arg("--no-warnings")
+            .arg("--js-runtimes")
+            .arg("node")
             .arg(&stream);
 
         if let Some(ref_url) = referer {
@@ -355,6 +357,10 @@ pub async fn fetch_media_metadata(url: &str, cookies_browser: Option<&str>) -> R
     cmd.arg("--dump-single-json")
         .arg("--no-warnings")
         .arg("--flat-playlist")
+        .arg("--js-runtimes")
+        .arg("node")
+        .arg("--extractor-args")
+        .arg("youtube:player_client=android,web,ios")
         .arg(url);
 
     let plugins_dir = crate::plugins::get_plugins_dir();
@@ -483,6 +489,8 @@ pub async fn execute_download(
         .map_err(|e| format!("Không thể tạo/mở thư mục tải '{}': {e}", req.output_dir))?;
 
     let mut cmd = Command::new(&ytdlp_path);
+    cmd.arg("--js-runtimes").arg("node");
+    cmd.arg("--extractor-args").arg("youtube:player_client=android,web,ios");
 
     let plugins_dir = crate::plugins::get_plugins_dir();
     if plugins_dir.exists() {
@@ -536,11 +544,11 @@ pub async fn execute_download(
         cmd.arg("-x");
         let audio_fmt = req.audio_format.as_deref().unwrap_or("mp3");
         cmd.arg("--audio-format").arg(audio_fmt);
-        let audio_q = req.audio_quality.as_deref().unwrap_or("320K");
+        let audio_q = req.audio_quality.as_deref().unwrap_or("0");
         cmd.arg("--audio-quality").arg(audio_q);
 
         if req.audio_normalize == Some(true) {
-            cmd.arg("--postprocessor-args").arg("ffmpeg:-af loudnorm");
+            cmd.arg("--postprocessor-args").arg("ffmpeg:-af loudnorm=I=-14:TP=-1:LRA=11");
         }
     } else {
         if let Some(ref container) = req.video_container {

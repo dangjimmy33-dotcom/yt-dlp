@@ -23,6 +23,7 @@ import { MediaPreviewCard } from "./components/MediaPreviewCard";
 import { FormatSelector } from "./components/FormatSelector";
 import { DownloadQueue } from "./components/DownloadQueue";
 import { PlaylistModal } from "./components/PlaylistModal";
+import { BatchDownloadModal } from "./components/BatchDownloadModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { EngineStatusModal } from "./components/EngineStatusModal";
 import { UpdateNotificationModal } from "./components/UpdateNotificationModal";
@@ -51,6 +52,7 @@ import {
   Boxes,
   Compass,
   Globe,
+  Layers,
 } from "lucide-react";
 
 export default function App() {
@@ -121,6 +123,7 @@ export default function App() {
 
   // Modals
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState<boolean>(false);
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isEngineModalOpen, setIsEngineModalOpen] = useState<boolean>(false);
   const [isPluginModalOpen, setIsPluginModalOpen] = useState<boolean>(false);
@@ -549,15 +552,30 @@ export default function App() {
   }, [pendingSniffedStream]);
 
   // Batch download playlist items
-  const handleDownloadPlaylistSelected = (entries: PlaylistEntry[]) => {
+  const handleDownloadPlaylistSelected = (
+    entries: PlaylistEntry[],
+    options?: { downloadType: "video" | "audio"; quality: string; audioFormat: string; audioQuality: string }
+  ) => {
+    const dType = options?.downloadType || "video";
+    const qual = options?.quality || settings.defaultVideoQuality || "1080p";
+    const aFmt = options?.audioFormat || settings.defaultAudioFormat || "mp3";
+    const aQual = options?.audioQuality || settings.defaultAudioQuality || "320K";
+
     entries.forEach((entry, idx) => {
       setTimeout(() => {
         const req: DownloadRequest = {
           id: `${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
           url: entry.url,
-          title: entry.title,
-          download_type: "video",
-          quality: settings.defaultVideoQuality || "1080p",
+          title:
+            dType === "audio"
+              ? `[Audio ${aFmt.toUpperCase()}] ${entry.title}`
+              : `[Video ${qual}] ${entry.title}`,
+          download_type: dType,
+          quality: dType === "video" ? qual : "best",
+          video_container: dType === "video" ? "mp4" : undefined,
+          audio_format: dType === "audio" ? aFmt : undefined,
+          audio_quality: dType === "audio" ? aQual : undefined,
+          audio_normalize: false,
           output_dir: settings.defaultDownloadDir,
           embed_subtitles: settings.embedSubtitles,
           embed_thumbnail: settings.embedThumbnail,
@@ -566,10 +584,19 @@ export default function App() {
           cookies_browser: settings.cookiesBrowser,
         };
         handleStartDownload(req);
-      }, idx * 600);
+      }, idx * 400);
     });
 
     toast.success(`Đã thêm ${entries.length} video vào hàng đợi tải!`);
+  };
+
+  // Batch download multiple custom links
+  const handleStartBatchDownload = (requests: DownloadRequest[]) => {
+    requests.forEach((req, idx) => {
+      setTimeout(() => {
+        handleStartDownload(req);
+      }, idx * 400);
+    });
   };
 
   // Cancel task
@@ -746,6 +773,15 @@ export default function App() {
                   {activeTaskCount}
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={() => setIsBatchModalOpen(true)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-white/[0.04] transition-all cursor-pointer"
+              title="Dán danh sách nhiều link hoặc tập phim để tải hàng loạt đa luồng"
+            >
+              <Layers className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Tải Nhiều Link</span>
             </button>
 
             <button
@@ -960,6 +996,7 @@ export default function App() {
                 setUrl={setUrl}
                 onAnalyze={handleAnalyze}
                 onQuickDownload={handleQuickDownload}
+                onOpenBatchModal={() => setIsBatchModalOpen(true)}
                 isLoading={isLoading}
               />
 
@@ -1030,6 +1067,14 @@ export default function App() {
           onDownloadSelected={handleDownloadPlaylistSelected}
         />
       )}
+
+      <BatchDownloadModal
+        isOpen={isBatchModalOpen}
+        onClose={() => setIsBatchModalOpen(false)}
+        settings={settings}
+        onStartBatchDownload={handleStartBatchDownload}
+        onSelectFolder={handleSelectFolder}
+      />
 
       <SettingsModal
         isOpen={isSettingsOpen}
